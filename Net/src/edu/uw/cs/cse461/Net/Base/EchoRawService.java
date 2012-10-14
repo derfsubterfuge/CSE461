@@ -41,11 +41,14 @@ public class EchoRawService extends NetLoadableService  {
 		int udpPort = NetBase.theNetBase().config().getAsInt("echoraw.udpport", 0, TAG);
 		int tcpPort = NetBase.theNetBase().config().getAsInt("echoraw.tcpport", 0, TAG);
 		
+		//TODO change to use constructor that takes socket address
 		mServerSocket = new ServerSocket(tcpPort);
 		Log.i(TAG,  "Server socket port = " + mServerSocket.getLocalPort());
 		
+		//TODO change to use constructor that takes socket address
 		mDatagramSocket = new DatagramSocket(udpPort);
 		Log.i(TAG,  "Datagram port = " + mDatagramSocket.getLocalPort());
+		Log.i(TAG, "IP address = " + mDatagramSocket.getLocalAddress());
 		
 		// Code/thread handling the UDP socket
 		Thread dgramThread = new Thread() {

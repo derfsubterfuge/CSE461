@@ -1,5 +1,7 @@
 package edu.uw.cs.cse461.AndroidApps;
 
+import java.net.Socket;
+
 import org.json.JSONObject;
 
 import android.content.SharedPreferences;
@@ -12,6 +14,7 @@ import edu.uw.cs.cse461.Net.Base.NetBase;
 import edu.uw.cs.cse461.Net.Base.NetLoadableAndroidApp;
 import edu.uw.cs.cse461.Net.RPC.RPCCall;
 import edu.uw.cs.cse461.Net.RPC.RPCService;
+import edu.uw.cs.cse461.Net.TCPMessageHandler.TCPMessageHandler;
 import edu.uw.cs.cse461.util.BackgroundToast;
 import edu.uw.cs.cse461.util.ConfigManager;
 import edu.uw.cs.cse461.util.ContextManager;
@@ -135,7 +138,36 @@ public class PingTCPMessageHandlerActivity extends NetLoadableAndroidApp {
     			try {
     				runOnUiThread(new Runnable() {
     					public void run() {
-    						_setOutputText("Ran a ping test");
+    						try {
+						    	Log.d(TAG, "Reading user inputs...");
+						    	// get server ip, port, socket timeout
+								readUserInputs(); 
+								ConfigManager config = NetBase.theNetBase().config();
+								int socketTimeout = config.getAsInt("ping.sockettimeout", 500, TAG);
+						    	Log.d(TAG, "Successfully read user inputs. ServerIP = " + mServerIP + ", Port = " + mServerPort);
+								
+								ElapsedTime.start("PingTCPMH");
+								
+								Socket socket = new Socket(mServerIP, Integer.parseInt(mServerPort));
+								socket.setSoTimeout(socketTimeout);
+
+								TCPMessageHandler msgHandler = new TCPMessageHandler(socket);
+								byte[] data = new byte[0];
+								
+								msgHandler.sendMessage(data);
+								msgHandler.readMessageAsBytes();
+								
+								msgHandler.discard();
+								
+								ElapsedTime.stop("PingTCPMH");
+								
+	    						_setOutputText("Ran a ping test on server with IP:" + mServerIP + " on port: " + mServerPort + 
+	    								" Total time = " + String.format("%.2f msec", ElapsedTime.get("PingTCPMH").mean()));
+
+							} catch (Exception e) {
+			    				Log.e(TAG, "Caught exception: " + e.getMessage());
+			    				BackgroundToast.showToast(ContextManager.getActivityContext(), "Ping attempt failed: " + e.getMessage(), Toast.LENGTH_LONG);
+							}
     					}
     				});
     			} catch (Exception e) {
@@ -144,6 +176,15 @@ public class PingTCPMessageHandlerActivity extends NetLoadableAndroidApp {
     			}
     		}
     	}.start();
+    }
+    
+    /**
+     * Retrieve text from screen widgets.
+     * @throws Exception
+     */
+    private void readUserInputs() throws Exception {
+    	mServerIP = ((TextView)findViewById(R.id.pingtcpmessagehandler_iptext)).getText().toString();
+    	mServerPort = ((TextView)findViewById(R.id.pingtcpmessagehandler_porttext)).getText().toString();
     }
 
     private void _setOutputText(String msg) {
