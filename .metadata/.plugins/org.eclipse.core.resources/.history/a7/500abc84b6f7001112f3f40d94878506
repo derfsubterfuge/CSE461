@@ -1,0 +1,35 @@
+package edu.uw.cs.cse461.util;
+
+import java.io.IOException;
+import java.net.Socket;
+
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
+public interface TCPMessageHandlerInterface {
+
+	/**
+	 * Closes the underlying socket and associated streams.  The TCPMessageHandler object is 
+	 * unusable after execution of this method.
+	 */
+	public void discard();
+	
+	//--------------------------------------------------------------------------------------
+	// send routines
+	//--------------------------------------------------------------------------------------
+	
+	public void sendMessage(byte[] buf);
+	public void sendMessage(String str);
+	public void sendMesssage(JSONArray jsArray);
+	public void sendMessage(JSONObject jsObject);
+	
+	//--------------------------------------------------------------------------------------
+	// read routines
+	//--------------------------------------------------------------------------------------
+	
+	public byte[] readMessageAsBytes();
+	public String readMessageAsString();
+	public JSONArray readMessageAsJSONArray();
+	public JSONObject readMessageAsJSONObject();
+}

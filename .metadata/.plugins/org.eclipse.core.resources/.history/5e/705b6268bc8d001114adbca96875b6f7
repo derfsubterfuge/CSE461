@@ -1,0 +1,708 @@
+package edu.uw.cs.cse461.sp12.OS;
+
+import java.io.FileInputStream;
+import java.net.InetAddress;
+import java.util.HashMap;
+import java.util.Properties;
+import java.util.Timer;
+import java.util.TimerTask;
+
+import org.apache.commons.cli.CommandLine;
+import org.apache.commons.cli.CommandLineParser;
+import org.apache.commons.cli.HelpFormatter;
+import org.apache.commons.cli.Options;
+import org.apache.commons.cli.PosixParser;
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import edu.uw.cs.cse461.sp12.OS.NameManagerBase.NameException;
+import edu.uw.cs.cse461.sp12.OS.NameManagerBase.NameRecord;
+import edu.uw.cs.cse461.sp12.OS.RRecord.ARecord;
+import edu.uw.cs.cse461.sp12.OS.RRecord.RRType;
+import edu.uw.cs.cse461.sp12.OS.RRecord.SOARecord;
+import edu.uw.cs.cse461.sp12.util.Log;
+
+/**
+ * Protocol: Based on RPC.  The calls:
+ * <p>
+ * Request:  method: "register" 
+ *           args: 
+ * <br>Response:  void
+ * <p>
+ * Fetch all records (for all apps) for a specific host.
+ * Request:  method: "fetchall"
+ *           args:  {host: hostname}
+ * <br>Response:  [ [appname, port, authoritative], ...]
+ *
+ * <pre>
+ * app:"ddns" supports RPC calls:
+ *     register( {host: hostname,  ip: ipaddr,   port: portnum} ) => { status: "OK" } or errormsg
+ *     resolve( { host: hostname } ) => { host: repeats hostname, ip: ip address, authoritative: boolean } ) or errormsg
+ * </pre>
+ * 
+ *  * @author zahorjan
+ *
+ */
+public class DDNSService extends RPCCallable {
+	private static String TAG="DDNSService";
+	public static final char NAMESEP = '.';
+	
+	private Timer mTimer;  // to periodically register with parent
+	private long mCacheTTL;
+	
+	private HashMap<String, DDNSTree> mNameMap;
+	private FullName mSoaName; // root name of my zone
+	
+	private RPCCallableMethod<DDNSService> register;
+	private RPCCallableMethod<DDNSService> resolve;
+	
+	private DDNSServiceHTTPD mHTTPDServer;
+	
+	@Override
+	public String servicename() {
+		return "ddns";
+	}
+	
+	/**
+	 * Try to keep straight when we have a fully qualified name, and when we may not,
+	 * using the compiler's type checking system.
+	 * <p>
+	 * Except for the root, a FullName is an absolute name ending with a '.'.
+	 * The name of the root is the empty string, "".
+	 * <p>
+	 * Example: FullName("a.b.c") is "a.b.c.".
+	 * <br>Example: FullName("a.b.c.") is "a.b.c.".
+	 * <br>Example: FullName(".a.b.c.") is "a.b.c.".
+	 * <br>Example: FullName(".") is "".
+	 * @author zahorjan
+	 *
+	 */
+	public static class FullName {
+		private static final String TAG="FullName";
+		private String delegate;
+		/**
+		 * Deals with optional trailing '.', by applying one if needed.  The root name, "", never has a dot.
+		 * All other names are of form "a.b.c.".
+		 * @param name
+		 * @return
+		 */
+		public FullName(String name) {
+			delegate = name;
+			if ( delegate == null ) delegate = "";
+			else if ( delegate.isEmpty() || delegate.equals(".")) delegate = "";
+			else {
+				if ( delegate.startsWith(".") ) delegate = delegate.substring(1);
+				if ( !delegate.endsWith(".") ) delegate = delegate + ".";
+			}
+		}
+		/**
+		 * Given a valid name, returns parent of that name.  For example, given a.b.c.d, returns b.c.d.
+		 * (Note that the name of the root is "").
+		 * @param name  The name whose parent you want
+		 * @return The name of the parent.  Returns the root ("") if argument name is null.
+		 */
+		public FullName parent() {
+			if ( delegate == null ) return null;
+			int index = delegate.indexOf(NAMESEP);
+			if ( index < 0 || index >= delegate.length()-1  ) return new FullName("");
+			return new FullName(delegate.substring(index+1));
+		}
+		
+		/**
+		 * Indicates whether or not this FullName is an immediate child of the parent.
+		 * For example, a.b.c. is a child of b.c., but not of c.
+		 * @param parent Suspected parent's name
+		 * @return true if a direct child, false otherwise
+		 */
+		public boolean isChildOf(FullName parent) {
+			if (delegate.length() < parent.toString().length()+2 ) return false;
+			if ( !delegate.endsWith(parent.toString()) ) return false;
+			String child = delegate.substring(0, delegate.length()-parent.toString().length());
+			if ( !child.endsWith(".") || child.equals(".") ) return false;
+			child = child.substring(0,child.length()-1);
+			if ( child.indexOf('.') >= 0 ) return false; // it's an ancestor, but not a child
+			return true;
+		}
+		
+		public Boolean equals(Fullname other) {
+			return delegate != null && delegate.equals(other);
+		}
+		
+		public String toString() {
+			return delegate;
+		}
+	}
+
+	//------------------------------------------------------------------------
+	// Utility classes
+
+	public static class DDNSException extends Exception {
+		private static final long serialVersionUID = 1L;
+		public DDNSException(String msg) { super(msg); }
+	}
+
+	//------------------------------------------------------------------------
+
+	/**
+	 * Constructor.  Registers the system RPCServerSocket with the parent as
+	 * this host's ip address.  Registers the root server and itself in the
+	 * local name cache.
+	 * @throws DDNSException
+	 */
+	DDNSService() throws DDNSException {
+		
+		NameManager manager = null;
+		try {
+			mTimer = new Timer();
+			
+			mNameMap = new HashMap<String, DDNSTree>();
+			
+			//--------------------------------------------------------------
+			// create name tree
+			//    Example: ddns.soa = jz.cse461.:passwordWithParent
+			//--------------------------------------------------------------
+
+			RPCService rpcService = (RPCService)OS.getService("rpc");
+			String myIP = rpcService.localIP();
+			int myPort = rpcService.localPort();
+			Log.d(TAG, "myAddress = " + myIP + ":" + myPort);
+
+			String soaStr = OS.config().getProperty("ddns.soa");
+			if ( soaStr == null ) throw new DDNSException("No ddns.soa entry in config file");
+			String[] token = soaStr.split(":");
+			if ( token.length != 2 ) throw new DDNSException("Invalid ddns.soa entry: " + soaStr);
+			
+			mSoaName = new FullName(token[0]);
+			DDNSTree rootNode = new DDNSTree(mSoaName);
+			rootNode.addRecord( new SOARecord( token[1]) );
+			rootNode.addRecord( new ARecord(myIP, myPort));
+			mNameMap.put(mSoaName.toString(), rootNode);
+			
+			//----------------------------------------------------------------
+			// start and register my httpd
+			//----------------------------------------------------------------
+
+			int httpdPort = 0;  // default is to let system pick an unused port
+			try {
+				httpdPort = Integer.parseInt(OS.config().getProperty("ddns.httpdport", "0"));
+			} catch (Exception e) {}
+			
+			mHTTPDServer = null;
+			try {
+				mHTTPDServer = new DDNSServiceHTTPD(httpdPort);
+			} catch (Exception e) {
+				Log.e(TAG, "ADVISORY: Couldn't create DDNSServiceHTTPD");
+			}
+
+			if ( mHTTPDServer != null ) {
+				FullName httpdName = new FullName("www." + mSoaName);
+				DDNSTree wwwNode = mNameMap.findAddName( httpdName );
+				wwwNode.addRecord( new ARecord(myIP, mHTTPDServer.localPort()));
+			}
+			
+			//--------------------------------------------------------------
+			// set up RPC callable methods
+			//--------------------------------------------------------------
+
+			// export methods via the rpc service
+			register = new RPCCallableMethod<DDNSService>(this, "_register");
+			resolve = new RPCCallableMethod<DDNSService>(this, "_resolve");
+
+			rpcService.registerHandler(servicename(), "register", register );
+			rpcService.registerHandler(servicename(), "resolve", resolve );
+			
+			//--------------------------------------------------------------
+			// start up cache cleaning thread
+			//--------------------------------------------------------------
+
+			String ttlStr = OS.config().getProperty("ddns.cachettl");
+			try {
+				mCacheTTL = Integer.parseInt(ttlStr);
+				if ( mCacheTTL < 60 ){
+					Log.w(TAG, "Minimum cache ttl is 60 seconds.  Resetting value from config file.");
+					mCacheTTL = 60;
+				}
+			} catch (Exception e) {
+				Log.e(TAG, "ADVISORY: Invalid or missing ddns.cachettl property in config file");
+				mCacheTTL = 60;  // default is 1 minutes
+			}
+			mTimer.scheduleAtFixedRate( new TimerTask() {
+												public void run() {
+													NameManager manager = null;
+													try {
+														manager = new NameManager();
+														manager.deleteNonAuthoritativeOlderThan(mCacheTTL);
+													} catch (Exception e) {
+														Log.e(TAG, "Couldn't clean cache");
+													} finally {
+														if ( manager != null ) manager.discard();
+													}
+												}
+				                        }, 
+				                        1000 * mCacheTTL,
+				                        1000 * mCacheTTL
+									  );
+
+			Log.wtf(TAG, "Starting ddns service for zone '" + this.mSoaName + "' on host '" + OS.hostname() + "' on port " + myPort);
+
+			//--------------------------------------------------------------
+			// the following aren't done on the root.  (If I'm root, I just registered myself...)
+			//--------------------------------------------------------------
+			
+			if ( mSoaName.toString().isEmpty() ) {
+				// dump state of db
+				Log.i(TAG, manager.toString());
+				return;
+			}
+
+			//--------------------------------------------------------------
+			// register root host
+			//--------------------------------------------------------------
+
+			FullName rootFullName = new FullName("");
+			
+			String rootHost = OS.config().getProperty("ddns.rootserver");
+			if ( rootHost == null ) throw new DDNSException("DDNSAgent.DDNSAgent: no rootserver in config file");
+			this.mNameMap.findAddName("");
+			manager.write(rootFullName, RRType.RRTYPE_A.toString(), rootHost, true);
+
+			String rootPort = OS.config().getProperty("ddns.rootport");
+			if ( rootPort == null ) throw new DDNSException("DDNSAgent.DDNSAgent: no rootddnsport in config file");
+			manager.write(rootFullName, RRType.RRTYPE_RPC.toString(), rootPort, true);
+
+			// dump state of db
+			Log.i(TAG, manager.toString());
+			
+			//--------------------------------------------------------------
+			// periodically let my parent know where I am
+			//--------------------------------------------------------------
+			
+			mTimer.scheduleAtFixedRate(new TimerTask() {
+				public void run() {
+					try {
+						FullName myFullHostname = new FullName(OS.hostname());
+						String myPort = Integer.toString( ((RPCService)OS.getService("rpc")).localPort());
+						String myIP = InetAddress.getLocalHost().getHostAddress();
+						FullName parent = myFullHostname.parent();
+						RRecord parentAddress = resolve( parent.toString() );
+						if ( parentAddress.type != RRType.RRTYPE_RPC ) throw new DDNSException("Can't resolve address of parent: " + myFullHostname.parent() +
+																									" [" + parentAddress.type + "]");
+						RPCCallerSocket socket = new RPCCallerSocket(parent.toString(), parentAddress.ip, parentAddress.port);
+						socket.invoke(servicename(), "register", new JSONObject().put("host", OS.hostname())
+																			 .put("ip", myIP)
+																			 .put("port", myPort)
+																			 .put("password", mMyPassword)
+									 );
+					} catch (Exception e) {
+						Log.e(TAG, "ADVISORY: Caught exception while registering with parent:\n" + e.getMessage());
+					}
+				}
+			},
+			0L, (int)(mCacheTTL * 1000 * 0.8) );
+
+		} catch (Exception e) {
+			String msg = "Constructor caught exception: " + e.getMessage();
+			Log.e(TAG, msg);
+			throw new DDNSException(msg);
+		} finally {
+			if ( manager != null ) manager.discard();
+		}
+	}
+	
+	/**
+	 * Called to end execution.  Specifically, need to terminate any threads we've created.
+	 */
+	public void shutdown() {
+		mTimer.cancel();
+		if ( mHTTPDServer != null ) mHTTPDServer.stop();
+		mHTTPDServer = null;
+	}
+	
+	//---------------------------------------------------------------------------
+	// RPC callable routines
+	
+	private boolean _checkAuth(String host, String password) {
+		if ( host==null || password==null ) return false;
+		if ( !password.equals(mPasswordMap.get(host))) return false;
+		return true;
+	}
+
+	/**
+	*     register( {host: hostname, password: password, ip: ipaddr,  port: portnum} ) => { status: "OK" } or errormsg
+	* 
+	* @param args
+	* @return
+	*/
+	public JSONObject _register(JSONObject args) throws JSONException, NameException, DDNSException {
+		Log.i(TAG, "_register(" + args + ")");
+		
+		// register calls require a password
+		if ( !_checkAuth(args.getString("host"), args.getString("password")))
+			throw new DDNSException("Bad password for register call");
+		
+		// only fullnames go in the db
+		FullName thisHost = new FullName(OS.hostname());
+		FullName newHost = new FullName(args.getString("host"));
+		
+		// can register only direct descendants through the RPC interface
+		if ( !newHost.isChildOf(thisHost) ) throw new DDNSException("Server " + args.getString("host") + " cannot be registered at " + OS.hostname());
+
+		String ipaddr = args.getString("ip");
+		String port = args.getString("port");
+		
+		Log.e(TAG, "ip = " + ipaddr + "  port = " + port);
+
+		_register(newHost, ipaddr, port);
+
+		return null;
+	}
+	
+	
+	/**
+	 * Indicates host is going offline.
+	 *      unregister( {host: hostname, password: password, ip: ipaddr,  port: portnum} ) => { status: "OK" } or errormsg
+	 * @param args
+	 * @return
+	 * @throws JSONException
+	 * @throws DDNSException
+	 */
+	public JSONObject _unregister(JSONObject args) throws JSONException, DDNSException {
+
+		// register calls require a password
+		if ( !_checkAuth(args.getString("host"), args.getString("password")))
+			throw new DDNSException("Bad password for unregister call");
+
+		//TODO: implement
+		return null;
+	}
+
+	/**
+	 * This version is invoked via RPC.  (See versions of resolve() for documentation.)
+	 * @param callArgs
+	 * @return
+	 */
+	public JSONObject _resolve(JSONObject args) throws JSONException, DDNSException {
+		Log.i(TAG, "_resolve(" + args + ")");
+		JSONObject result = new JSONObject();
+		
+		// resolve calls don't require passwords
+
+		String host = args.getString("host");
+		if ( host == null ) throw new JSONException("Malformed call arguments: '" + args.toString() + "'");
+
+		RRecord address = resolve(host);
+		if ( address.type != RRType.RRTYPE_RPC ) throw new DDNSException("Can't resolve host '" + host + "'");
+		result.put("host", host).put("ip", address.ip).put("port", address.port).put("auth", address.mAuthoritative);
+
+		return result;
+	}
+	
+	// RPC callable routines
+	//---------------------------------------------------------------------------
+
+	//---------------------------------------------------------------------------
+	// resolve routines
+	/**
+	 * Convenience wrapper for the other resolve for clients who don't have a NameManager handy.
+	 * Creates a NameManager, invokes resolve(NameManager...) with it, then discards it.
+	 * <p>
+	 * See resolve(NameManager...) for details.
+	 */
+	public RRecord resolve(String host) {
+		Log.d(TAG, "Resolve(" + host + ")");
+		return resolve(host, RRType.RRTYPE_RPC);
+	}
+	
+	/**
+	 * Resolves a host name to a fully qualified address of the RPC service on that host.
+	 * @param manager  The NameManager to use
+	 * @param host The host name (e.g., "jz.cse461")
+	 * @param app The app name (e.g., "ddns")
+	 * @return An AddressRecord.  The type field will be AddressType.EMPTY if resolution encounters an unrecoverable error.
+	 *          It will be AddressType.NEGATIVE if the address is (recently) known to be unresolvable. Otherwise, it will be 
+	 *          a resolved address with type AddressType.APP.
+	 */
+	public RRecord resolve(NameManager manager, String host) {
+		Log.d(TAG, "resolve(manager, " + host + ")");
+		return resolve(manager, host, RRType.RRTYPE_RPC);
+	}
+	
+	/**
+	 * 
+	 * @param host
+	 * @param type
+	 * @return
+	 */
+	public RRecord resolve(String host, RRType type) {
+		Log.d(TAG, "resolve(" + host + ", " + type.toString() + ")");
+		RRecord result;
+		NameManager manager = null;
+		try {
+			manager = new NameManager();
+			result = resolve(manager, host, type);
+		} catch (Exception e ) {
+			result = new RRecord(host + ":" + type);
+		} finally {
+			if ( manager != null ) manager.discard();
+		}
+		return result;
+	}
+	
+	/**
+	 * Resolves a host name to a fully qualified address of the specified type.
+	 * @param manager  The NameManager to use
+	 * @param host The host name (e.g., "jz.cse461")
+	 * @param app The app name (e.g., "ddns")
+	 * @return An AddressRecord.  The type field will be AddressType.EMPTY if resolution encounters an unrecoverable error.
+	 *          It will be AddressType.NEGATIVE if the address is (recently) known to be unresolvable. Otherwise, it will be 
+	 *          a resolved address with type AddressType.APP.
+	 */
+	public RRecord resolve(NameManager manager, String host, RRType type) {
+		Log.d(TAG, "resolve(manager, " + host + ", " + type.toString() + ")");
+		RRecord address = new RRecord(host + ":" + type);
+		
+		// only fullnames go in the db
+		FullName fullhost = new FullName(host);
+
+		//Log.e("***resolve(" + host + ", " + app + ")");
+
+		// first try a cached address, if there is one
+		if ( _resolveFromCache(manager, fullhost, type, address)) return address;
+
+		// if cached address didn't work, update cache and try again
+		if ( _updateCache(manager, fullhost) && _resolveFromCache(manager, fullhost, type, address)) return address;
+
+		// cache updating may have encountered a stale, cached record for some non-root ancestor.
+		// Try resolution from root
+		if ( _fullResolve(manager, fullhost, type, address) && _resolveFromCache(manager, fullhost, type, address) ) return address;
+
+		// cache negative info
+		try {
+			if ( address.ip == null ) manager.write(fullhost, RRType.RRTYPE_A.toString(), null, false);
+			if ( address.port == null ) manager.write(fullhost, type.toString(), null, false);
+			// try to get the negative record
+			_resolveFromCache(manager, fullhost, type, address);
+		} catch (NameException e ) {
+			// fatal error -- can't install new record(s)
+		}
+
+		return address;
+	}
+	
+	/**
+	 * This is a last resort resolver.  It starts at the root and works its way down.
+	 * @param manager
+	 * @param host
+	 * @param type
+	 * @param address
+	 * @return
+	 */
+	private boolean _fullResolve(NameManager manager, FullName host, RRType type, RRecord address) {
+		Log.d(TAG, "_fullResolve(manager, " + host + ", " + type.toString() + ", address)");
+		String delims = "[\\.]";
+		String[] component = host.toString().split(delims);
+
+		try {
+			FullName name = new FullName("");
+			// skip the root.  (host is a fullname.)
+			for ( int i=component.length-2; i>=0; i++ ) {
+				name = new FullName(component[i] + '.' + name);
+				Log.e(TAG, "_fullResolve: working on '" + name + "'");
+				address = resolve(manager, name.toString(), RRType.RRTYPE_RPC);
+				if ( address.type != RRType.RRTYPE_RPC ) return false;
+				if ( !address.mAuthoritative ) throw new DDNSException("Encountered non-authoritative record for name '" + name + "'");
+				manager.write(name, RRType.RRTYPE_A.toString(), address.ip, address.mAuthoritative);
+				manager.write(name, RRType.RRTYPE_RPC.toString(), address.port, address.mAuthoritative);
+			}
+			return true;
+		} catch (Exception e) {
+			Log.e(TAG, "_fullResolve caught exception: " + e.getMessage());
+		}
+		return false;
+	}
+
+	/**
+	 * Fetches all records about named host from authoritative server and
+	 * then updates the local cache.
+	 * @param manager  The NameManager to use
+	 * @param host The host name
+	 * @return true if records have been inserted into the name cache, false otherwise
+	 */
+	private boolean _updateCache(NameManager manager, FullName host) {
+		Log.d(TAG, "_updateCache(manager, " + host + ")");
+		FullName parent = host.parent();
+		RRecord parentAddress = resolve(manager, parent.toString());  // reinvokes us recursively if parent map entry isn't cached
+
+		// can try to contact parent ddns only if we managed to resolve its address
+		try {
+			if ( parentAddress.type != RRType.RRTYPE_RPC ) throw new DDNSException("No cached record for parent's IP");
+			RPCCallerSocket sock = new RPCCallerSocket(parent.toString(), parentAddress.ip, parentAddress.port);
+			JSONObject response = sock.invoke( servicename(), "resolve", new JSONObject().put("host", host) );
+			
+			//TODO:  Should we simply believe any old thing the remote server says?
+			manager.write(host, RRType.RRTYPE_A.toString(), response.getString("ip"), response.getBoolean("auth"));
+			manager.write(host, RRType.RRTYPE_RPC.toString(), response.getString("port"), response.getBoolean("auth"));
+
+		} catch (Exception e) {
+			// can't contact the server, or no reply received
+			Log.e(TAG, "ADVISORY: invoke(ddns, resolve, host=" + host + ") failed:\n" + e.getMessage());
+		} 
+
+		return false;
+	}
+
+	/**
+	 * 
+	 * @param manager
+	 * @param host
+	 * @param type
+	 * @param address
+	 * @return  true if a record was found, false if no record
+	 */
+	private boolean _resolveFromCache(NameManager manager, FullName host, RRType type, RRecord address) {
+		Log.d(TAG, "_resolveFromCache(manager, " + host + ", " + type.toString() + ", address)");
+		// first try a cached address, if there is one
+		NameRecord record;
+		try {
+			// fetch host record
+			record = manager.readOneRecord(host, RRType.RRTYPE_A.toString());
+			if ( record == null ) return false;
+			address.ip = record.value;
+			address.mAuthoritative = record.authoritative;
+			if ( address.ip == null ) address.type = RRType.NEGATIVE;
+			else if ( type == RRType.RRTYPE_A ) address.type = type;
+			if ( type == RRType.RRTYPE_A ) return true;
+			
+			// fetch app record
+			record = manager.readOneRecord(host, type.toString());
+			if ( record == null ) {
+				// Sanity check code: the root resolver should always be in the db
+				if ( host.toString().isEmpty() ) Log.e(TAG, "resolve(" + host + ", " + type + "): Didn't find record, but it's root!");
+				return false;
+			}
+			address.port = record.value;
+			address.mAuthoritative &= record.authoritative;
+			if ( address.port != null ) address.type = type;
+			else address.type = RRType.NEGATIVE;
+			return true;
+
+		} catch (Exception e ) {
+			// no cached value
+			Log.e(TAG, "ADVISORY: _tryResolve caught exception: " + e.getMessage());
+			return false;
+		}
+	}
+	// resolve routines
+	//---------------------------------------------------------------------------
+	
+	//---------------------------------------------------------------------------
+	// register routines
+
+	/**
+	 * Update address mapping.  The interface allows only a host specification.
+	 * The port given is implicitly for the RPC service on that host.
+	 * 
+	 * @param fullhost The name of the host for this mapping.
+	 * @param ip  That host's IP address.
+	 * @param port The port of the RPC service on that host.
+	 */
+	private void _register(FullName fullhost, String ip, String port) {
+		Log.d(TAG, "_register(" + fullhost + ", " + ip + ", " + port + ")");
+		NameManager manager = null;
+		try {
+			FullName myHost = new FullName(OS.hostname());
+			// Only the entries for this host and for the root are authoritative - others
+			// can change, and must be purged from the cache periodically.
+			boolean auth = (fullhost.toString().isEmpty() || fullhost.equals(myHost));
+			manager = new NameManager();
+			manager.write(fullhost, RRType.RRTYPE_A.toString(), ip, auth);
+			manager.write(fullhost, RRType.RRTYPE_RPC.toString(), port, auth);
+			Log.d(TAG, manager.toString());
+		} catch (Exception e) {
+			Log.e(TAG, "_register caught exception " + e.getMessage());
+		} finally {
+			if ( manager != null ) manager.discard();
+		}
+	}
+	// register routines
+	//---------------------------------------------------------------------------
+	
+		
+	/**
+	 * The usual toString.
+	 */
+	public String toString() {
+		StringBuilder sb = new StringBuilder();
+		String currentName = OS.hostname();
+		sb.append("Hostname: ");
+		if ( currentName != null ) sb.append(currentName).append("\n");
+		else sb.append("undefined\n");
+		
+		NameManager manager = null;
+		try {
+			manager = new NameManager();
+			sb.append(manager.toString()).append("\n");
+		} catch (Exception e) {
+			sb.append("DDNSAgent.toString: caught exception: " + e.getMessage());
+		} finally {
+			if (manager != null) manager.discard();
+		}
+		return sb.toString();
+	}
+
+	/**
+	 * A simple test driver that ends up dumping the current cached naming information.
+	 * @param args
+	 */
+	public static void main(String[] args) {
+		final String TAG="DDNSAgent.main";
+		String configFilename = "config.ini";
+		try {
+			// This code deals with command line options
+			Options options = new Options();
+			options.addOption("f", "configfile", true, "Config file name (Default: " + configFilename + ")");
+			options.addOption("h", "help", false, "Print this message");
+
+			CommandLineParser parser = new PosixParser();
+
+			CommandLine line = parser.parse(options, args);
+			if ( line.hasOption("help") ) {
+				HelpFormatter formatter = new HelpFormatter();
+				formatter.printHelp(DDNSService.class.getName(), options );
+				return;
+			}
+			if ( line.hasOption("configfile") ) configFilename = line.getOptionValue("configfile");
+
+			// read config file data
+			Properties config = new Properties();
+			config.load(new FileInputStream(configFilename));
+
+			OS.boot(config);
+
+			DDNSService agent = (DDNSService)OS.getService("ddns");
+			Log.e(TAG, agent.toString());
+
+			// Resolve a host
+			RRecord testAddress = agent.resolve(OS.hostname(), RRType.RRTYPE_A);
+			Log.e(TAG, testAddress.toString());
+
+			testAddress = agent.resolve(OS.hostname());
+			Log.e(TAG, testAddress.toString());
+			
+			testAddress = agent.resolve("");
+			Log.e(TAG, testAddress.toString());
+
+			testAddress = agent.resolve(new FullName(OS.hostname()).parent().toString());
+			Log.e(TAG, testAddress.toString());
+
+			testAddress = agent.resolve("foo.jz.cse461");
+			Log.e(TAG, testAddress.toString());
+
+			testAddress = agent.resolve("foo.cse461");
+			Log.e(TAG, testAddress.toString());
+
+		} catch (Exception e) {
+			Log.e(TAG, "DDNSAgent caught exception: " + e.getMessage());
+		}
+	}
+}

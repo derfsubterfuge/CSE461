@@ -1,0 +1,49 @@
+package edu.uw.cs.cse461.sp12.OS;
+
+import java.io.IOException;
+import java.lang.reflect.Method;
+import java.util.Properties;
+
+import edu.uw.cs.cse461.sp12.util.Log;
+import edu.uw.cs.cse461.sp12.util.NanoHTTPD;
+
+public class HTTPDService extends NanoHTTPD {
+	private static final String TAG="DDNSServiceHTTPD";
+	
+	public HTTPDService( int port ) throws IOException {
+		super(port, null); // don't want to serve files, ever (?)
+		
+		Log.e(TAG, "Created at port " + localPort());
+	}
+
+	@Override
+	public Response serve( String uri, String method, Properties header, Properties parms, Properties files ) {
+		try {
+			Log.e(TAG,  "method = '" + method + "'  uri=" + uri);
+			
+			if ( !uri.toLowerCase().equals("/ddns") || !method.toLowerCase().equals("get") )
+				return new Response( HTTP_NOTFOUND, MIME_HTML, HTTP_NOTFOUND);
+			
+			String[] token = uri.split("/");
+			if ( token.length < 1 ) return new Response( HTTP_NOTFOUND, MIME_HTML, HTTP_NOTFOUND);
+			
+			RPCCallable service = OS.getService(token[0]);
+			if ( service == null ) return new Response( HTTP_NOTFOUND, MIME_HTML, HTTP_NOTFOUND);
+			
+			Class serviceClass = service.getClass();
+			Method httpMethod = serviceClass.getMethod("httpServe", String[].class);
+			if ( httpMethod == null ) return new Response( HTTP_NOTFOUND, MIME_HTML, HTTP_NOTFOUND);
+			
+			method.invoke(service, token);
+			
+			DDNSService ddns = (DDNSService)OS.getService("ddns");
+			if ( ddns == null ) throw new Exception("Can't find local DDNSService");
+			return new Response( HTTP_OK, MIME_PLAINTEXT, ddns.toString() );
+			
+		} catch (Exception e) {
+			return new Response( HTTP_INTERNALERROR, MIME_HTML, HTTP_INTERNALERROR + "<p><pre>" + e.getMessage() + "</pre>");
+		}
+	}
+
+
+}

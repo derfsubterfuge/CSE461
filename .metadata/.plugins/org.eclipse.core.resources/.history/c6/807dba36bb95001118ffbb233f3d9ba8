@@ -1,0 +1,165 @@
+package edu.uw.cs.cse461.sp12.OS;
+
+import java.util.Arrays;
+import java.util.List;
+
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
+
+public class DDNSException extends Exception {
+	public DDNSErrorCode errorCode;
+	protected List<String> args;
+	
+	public static enum DDNSErrorCode {
+		NOSUCHNAME(1, "NoSuchName"),       // name doesn't exist
+		NOADDRESS(2, "NoAddress"),         // name exists, but has no registered address
+		AUTHORIZATION(3, "Authorization"), // some operation required authorization caller didn't have
+		RUNTIME(4, "Runtime"),             // misc. exception
+		TTLEXPIRED(5, "TTLExpired"),       // exceeded max steps allowed
+		ZONE(6, "Zone");                   // request about name not in zone
+		
+		public final String mString;
+		public final int mInt;
+		
+		DDNSErrorCode(int i, String s) { mInt = i; mString = s; }
+		@Override
+		public String toString() { return mString; }
+		public int toInt() { return mInt; }
+	};
+	
+	/**
+	 * Base class.  Only more specific subclass objects can be constructed.
+	 * @param msg
+	 */
+	protected DDNSException(String msg) {
+		super(msg);
+	}
+	
+	@Override
+	public String getMessage() {
+		return super.getMessage();
+	}
+	
+	/**
+	 * messing routine (DDNSException -> JSONObject)
+	 * @return
+	 * @throws JSONException
+	 */
+	protected JSONObject marshall() throws JSONException {
+		JSONObject result = new JSONObject().put("exceptionnum", errorCode.toInt())
+											.put("message", getMessage());
+		if ( args != null ) result.put("args", args);
+		return result;
+	}
+	
+	/**
+	 * Demarshalling routine (JSONObject -> DDNSException subclass)
+	 * @param obj
+	 * @return
+	 */
+	public static DDNSException unmarshall(JSONObject obj) throws JSONException, DDNSException {
+		JSONArray args = null;
+		if ( obj.has("args") ) args = obj.getJSONArray("args");
+		switch(obj.getInt("exceptionnum")) {
+		case 1:	throw new DDNSNoSuchNameException(new DDNSFullName(args.getString(0)));
+		case 2: throw new DDNSNoAddressException(new DDNSFullName(args.getString(0)));
+		case 3: throw new DDNSAuthorizationException(new DDNSFullName(args.getString(0)));
+		case 4: throw new DDNSRuntimeException(obj.getString("message"));
+		case 5: throw new DDNSTTLExpiredException(new DDNSFullName(args.getString(0)));
+		case 6: throw new DDNSZoneException(new DDNSFullName(args.getString(0)), new DDNSFullName(args.getString(1)));
+		default: throw new DDNSRuntimeException("Can't decode DDNSException: " + obj.toString());
+		}
+	}
+	
+	/**
+	 * Catch-all exception for something went wrong.  The message should explain what.
+	 * @author zahorjan
+	 *
+	 */
+	public static class DDNSRuntimeException extends DDNSException {
+		DDNSRuntimeException(String msg) {
+			super(msg);
+			errorCode = DDNSErrorCode.RUNTIME;
+		}
+		public JSONObject marshall() throws JSONException {
+			return super.marshall();
+		}
+	}
+	
+	/**
+	 * A password was required, but either wasn't supplied or wasn't correct.
+	 * @author zahorjan
+	 *
+	 */
+	public static class DDNSAuthorizationException extends DDNSException {
+		DDNSAuthorizationException(DDNSFullName name) {
+			super("Bad password for '" + name + "'");
+			errorCode = DDNSErrorCode.AUTHORIZATION;
+			args = Arrays.asList(name.toString());
+		}
+		public JSONObject marshall() throws JSONException {
+			return super.marshall().put("name", args.get(0));
+		}
+	}
+	
+	/**
+	 * The name doesn't exist - there is no DDNS entry for it.
+	 * @author zahorjan
+	 *
+	 */
+	public static class DDNSNoSuchNameException extends DDNSException {
+		DDNSNoSuchNameException(DDNSFullName name) {
+			super("No such name: '" + name + "'");
+			errorCode = DDNSErrorCode.NOSUCHNAME;
+			args = Arrays.asList(name.toString());
+		}
+		public JSONObject marshall() throws JSONException {
+			return super.marshall().put("name", args.get(0));
+		}
+	}
+
+	/**
+	 * The name exists and its record can hold an address, but it doesn't have an address.
+	 * @author zahorjan
+	 *
+	 */
+	public static class DDNSNoAddressException extends DDNSException {
+		DDNSNoAddressException(DDNSFullName name) {
+			super("No address exists for name '"+ name + "'");
+			errorCode = DDNSErrorCode.NOADDRESS;
+			args = Arrays.asList(name.toString());
+		}
+		public JSONObject marshall() throws JSONException {
+			return super.marshall().put("name", args.get(0));
+		}
+	}
+
+	/**
+	 * The maximum number of steps allowed to resolve the name has been exceed.
+	 * @author zahorjan
+	 *
+	 */
+	public static class DDNSTTLExpiredException extends DDNSException {
+		DDNSTTLExpiredException(DDNSFullName name) {
+			super("TTL expired resolving '" + name + "'");
+			errorCode = DDNSErrorCode.TTLEXPIRED;
+			args = Arrays.asList(name.toString());
+		}
+		public JSONObject marshall() throws JSONException {
+			return super.marshall().put("name", args.get(0));
+		}
+	}
+
+	public static class DDNSZoneException extends DDNSException {
+		DDNSZoneException(DDNSFullName name, DDNSFullName zone) {
+			super("Name '" + name +"' isn't in my zone [" + zone + "]");
+			args = Arrays.asList(name.toString(), zone.toString());
+		}
+		public JSONObject marshall() throws JSONException {
+			return super.marshall().put("name", args.get(0)).put("zone", args.get(1));
+		}
+	}
+
+}

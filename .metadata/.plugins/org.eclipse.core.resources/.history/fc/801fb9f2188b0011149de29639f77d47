@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="fill_parent"
+    android:layout_height="fill_parent"
+    android:orientation="vertical" >
+
+    <RelativeLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" >
+
+        <EditText
+            android:id="@+id/iptext"
+            android:layout_width="280dp"
+            android:layout_height="wrap_content"
+            android:layout_alignParentLeft="true"
+            android:layout_alignParentTop="true"
+            android:layout_marginLeft="16dp"
+            android:layout_marginTop="60dp"
+            android:ems="10" >
+
+            <requestFocus />
+        </EditText>
+
+        <EditText
+            android:id="@+id/porttext"
+            android:layout_width="120dp"
+            android:layout_height="wrap_content"
+            android:layout_alignLeft="@+id/iptext"
+            android:layout_below="@+id/iptext"
+            android:layout_marginTop="30dp"
+            android:ems="10"
+            android:inputType="numberDecimal" />
+
+        <Button
+            android:id="@+id/gobutton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_alignLeft="@+id/porttext"
+            android:layout_centerVertical="true"
+            android:layout_marginLeft="70dp"
+            android:onClick="onGoClicked"
+            android:text="Ping" />
+
+        <TextView
+            android:id="@+id/outputtext"
+            android:layout_width="wrap_content"
+            android:layout_height="170dp"
+            android:layout_alignLeft="@+id/porttext"
+            android:layout_alignRight="@+id/iptext"
+            android:layout_below="@+id/gobutton"
+            android:layout_marginLeft="14dp"
+            android:layout_marginTop="29dp"
+            android:ems="10" />
+
+        <TextView
+            android:id="@+id/myiptext"
+            android:layout_width="250px"
+            android:layout_height="wrap_content"
+            android:layout_alignParentLeft="true"
+            android:layout_alignParentTop="true"
+            android:layout_marginLeft="10px"
+            android:layout_marginTop="16dp"
+            android:text="TextView" />
+
+    </RelativeLayout>
+
+</LinearLayout>

@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<session version="1.0">
+<refactoring comment="Rename package &apos;edu.uw.cs.cse461.sp12.OSConsoleApps&apos; to &apos;edu.uw.cs.cse461.OSConsoleApps&apos;&#x0A;- Original project: &apos;OSConsoleApps&apos;&#x0A;- Original element: &apos;OSConsoleApps/src/edu.uw.cs.cse461.sp12.OSConsoleApps&apos;&#x0A;- Renamed element: &apos;OSConsoleApps/src/edu.uw.cs.cse461.OSConsoleApps&apos;&#x0A;- Update references to refactored element&#x0A;- Update textual occurrences in comments and strings" description="Rename package &apos;edu.uw.cs.cse461.sp12.OSConsoleApps&apos;" flags="589830" hierarchical="false" id="org.eclipse.jdt.ui.rename.package" input="/src&lt;edu.uw.cs.cse461.sp12.OSConsoleApps" name="edu.uw.cs.cse461.OSConsoleApps" qualified="false" references="true" stamp="1339450621548" textual="false" version="1.0"/>
+</session>

@@ -1,0 +1,12 @@
+# This file contains device-specific configuration information
+# that is read by the infrastructure at launch.
+
+# config values specific to this agent
+hostname=jz.cse461
+dbfile=jz.cse461.db
+
+
+# generic values, included to allow customization for debugging
+rootserver=cse461.cs.washington.edu
+ddnsport=46120
+pingport=46121

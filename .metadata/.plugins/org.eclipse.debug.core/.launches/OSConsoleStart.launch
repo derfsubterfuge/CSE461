@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<launchConfiguration type="org.eclipse.jdt.launching.localJavaApplication">
+<listAttribute key="org.eclipse.debug.core.MAPPED_RESOURCE_PATHS">
+<listEntry value="/OSConsoleApps/utilConsoleOnlySource/edu/uw/cs/cse461/OS/OSConsoleStart.java"/>
+</listAttribute>
+<listAttribute key="org.eclipse.debug.core.MAPPED_RESOURCE_TYPES">
+<listEntry value="1"/>
+</listAttribute>
+<stringAttribute key="org.eclipse.jdt.launching.MAIN_TYPE" value="edu.uw.cs.cse461.OS.OSConsoleStart"/>
+<stringAttribute key="org.eclipse.jdt.launching.PROGRAM_ARGUMENTS" value="--configfile ../ConfigFiles/root.config.ini"/>
+<stringAttribute key="org.eclipse.jdt.launching.PROJECT_ATTR" value="OSConsoleApps"/>
+</launchConfiguration>

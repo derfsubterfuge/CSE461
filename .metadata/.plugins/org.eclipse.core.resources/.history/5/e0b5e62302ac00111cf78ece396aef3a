@@ -1,0 +1,310 @@
+package edu.uw.cs.cse461.sp12.SNet;
+
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.FilenameFilter;
+import java.io.IOException;
+
+import org.json.JSONObject;
+
+import android.app.Activity;
+import android.content.Intent;
+import android.content.SharedPreferences;
+import android.content.res.AssetManager;
+import android.database.Cursor;
+import android.graphics.Bitmap;
+import android.net.Uri;
+import android.os.Bundle;
+import android.os.Environment;
+import android.provider.MediaStore;
+import android.view.View;
+import android.widget.ImageView;
+import android.widget.TextView;
+import edu.uw.cs.cse461.sp12.DB461.DB461.DB461Exception;
+import edu.uw.cs.cse461.sp12.OS.ContextManager;
+import edu.uw.cs.cse461.sp12.OS.DDNSFullName;
+import edu.uw.cs.cse461.sp12.OS.HTTPDService.HTTPProvider;
+import edu.uw.cs.cse461.sp12.OS.OS;
+import edu.uw.cs.cse461.sp12.OS.RPCCallableMethod;
+import edu.uw.cs.cse461.sp12.OS.RPCService;
+import edu.uw.cs.cse461.sp12.SNet.SNetController.PhotoType;
+import edu.uw.cs.cse461.sp12.util.Log;
+
+public class SNetActivity extends Activity implements HTTPProvider {
+	private static final String TAG="SNetActivity";
+	
+    public static final String PREFS_NAME = "CSE461SNET";
+    //TODO: fix me....
+	private static final String CONFIGFILENAME = "galaxy.jz.cse461.config.ini.png";
+	
+	private static final String SNETDBDIR = "/sdcard";
+	
+    private static final int CAPTURE_IMAGE_ACTIVITY_REQUEST_CODE = 100;
+    private static final int CHOOSE_PICTURE_ACTIVITY_REQUEST_CODE = 200;
+    
+    private static final int THUMB_WIDTH = 100;
+    private static final int THUMB_HEIGHT = 100;
+    
+	private RPCCallableMethod<SNetActivity> fetchupdates;
+	private RPCCallableMethod<SNetActivity> fetchphoto;
+    
+	private String mConfigFilename;
+	
+	private DDNSFullName mMyName;
+	private File   mGalleryDirFile;
+	
+	private SNetController mSNetController;
+	
+	
+	void displayFiles (AssetManager mgr, String path) {
+
+	}	
+
+	/** Called when the activity is first created. */
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        
+        // save my context so that this app can retrieve it later (?)
+        ContextManager.setContext(getApplicationContext());
+
+        setContentView(R.layout.config);
+        
+        AssetManager mgr = getAssets();
+        String[] assetFiles;
+	    try {
+	        assetFiles = mgr.list(path);
+	        if (list != null)
+	            for (int i=0; i<list.length; ++i)
+	                {
+	                    Log.e("Assets:", path +"/"+ list[i]);
+	                    displayFiles(mgr, path + "/" + list[i]);
+	                }
+	    } catch (IOException e) {
+	        Log.e("List error:", "can't list" + path);
+	    }
+        displayFiles(mgr,"");
+        displayFiles(mgr, "assets"); 
+        
+        
+        File dir = new File("directoryName");
+        // It is also possible to filter the list of returned files.
+        // This example does not return any files that start with `.'.
+        FilenameFilter filter = new FilenameFilter() {
+        	public boolean accept(File dir, String name) {
+        		return name.endsWith(".ini");
+        	}
+        };
+        File[] children = dir.listFiles(filter);
+
+
+     // The list of files can also be retrieved as File objects
+     File[] files = dir.listFiles();        
+        SharedPreferences settings = getSharedPreferences(PREFS_NAME,0);
+//        mConfigFilename = settings.getString("configfilename", xxx);
+        
+        try {
+        	fetchupdates = new RPCCallableMethod<SNetActivity>(this, "_fetchUpdates");
+        	fetchphoto = new RPCCallableMethod<SNetActivity>(this, "_fetchPhoto");
+        } catch (NoSuchMethodException e) {
+        	Log.e(TAG, "NoSuchMethodException: " + e.getMessage());
+        }
+		
+    }
+    
+    /**
+     * Shows my and chosen photos
+     */
+    private void showThumbnails() {
+    	ImageView imageView = null;
+    	
+    	String filename = mSNetController.getPhotoFilename(mMyName, PhotoType.MY_PHOTO);
+    	if ( filename != null ) {
+    		//Bitmap photoBmp = BitmapFactory.decodeFile(filename);
+    		imageView = (ImageView)findViewById(R.id.mypicture);
+    		imageView.setImageBitmap(BitmapLoader.loadBitmap(filename, THUMB_WIDTH, THUMB_HEIGHT));
+    	}
+
+    	filename = mSNetController.getPhotoFilename(mMyName, PhotoType.CHOSEN_PHOTO);
+    	if ( filename != null ) {
+    		//Bitmap photoBmp = BitmapFactory.decodeFile(filename);
+    		imageView = (ImageView)findViewById(R.id.chosenpicture);
+    		imageView.setImageBitmap(BitmapLoader.loadBitmap(filename, THUMB_WIDTH, THUMB_HEIGHT));
+    	}
+    }
+
+    @Override
+    protected void onDestroy() {
+    	super.onDestroy();
+    	Log.e(TAG, "onDestroy");
+    	
+    	SharedPreferences settings = getSharedPreferences(PREFS_NAME, 0);
+    	SharedPreferences.Editor editor = settings.edit();
+    	if ( this.mConfigFilename != null ) editor.putString("configfilename", mConfigFilename);
+    	editor.commit();
+    	
+    	// This will cause us to lose any currently allocated port...
+    	OS.shutdown();
+    }
+    
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+
+        //-------------------------------------------------
+    	// User took a picture
+        //-------------------------------------------------
+
+    	if (requestCode == CHOOSE_PICTURE_ACTIVITY_REQUEST_CODE) {
+            if (resultCode == RESULT_OK) {
+            	try {
+            		Uri selectedImage = data.getData();
+                    String[] filePathColumn = {MediaStore.Images.Media.DATA};
+
+                    Cursor cursor = getContentResolver().query(selectedImage, filePathColumn, null, null, null);
+                    cursor.moveToFirst();
+
+                    int columnIndex = cursor.getColumnIndex(filePathColumn[0]);
+                    String filePath = cursor.getString(columnIndex);
+                    cursor.close();
+                    
+                    mSNetController.newChosenPhoto(mMyName, filePath, mGalleryDirFile);
+            		// Try to update gallery viewer
+            		sendBroadcast(new Intent(
+            			    Intent.ACTION_MEDIA_MOUNTED,
+            			    Uri.parse("file://" + Environment.getExternalStorageDirectory())));            		
+            		
+
+            		showThumbnails();
+            	} catch (Exception e) {
+            		Log.e(TAG, "onActivity: " + e.getMessage());
+            	}
+            } else if (resultCode == RESULT_CANCELED) {
+                // User cancelled the image capture
+            } else {
+                // Image capture failed, advise user
+            }
+        }
+
+        //-------------------------------------------------
+        // user picked a photo
+        //-------------------------------------------------
+        
+        if (requestCode == CAPTURE_IMAGE_ACTIVITY_REQUEST_CODE) {
+            if (resultCode == RESULT_OK) {
+            	try {
+            		// take photo from intent data, when intent didn't specify a place to write the image
+                    File image = new File(mGalleryDirFile, "newMyPhoto.jpg");
+                	ImageView imageView = (ImageView)findViewById(R.id.mypicture);
+                	Bitmap photoBmp = (Bitmap)data.getExtras().get("data");
+                	imageView.setImageBitmap(photoBmp);
+                	FileOutputStream out = new FileOutputStream(image.getAbsolutePath());
+                	photoBmp.compress(Bitmap.CompressFormat.JPEG, 85, out);
+            	
+            		// Take photo from camera to file.  Results in a big photo.
+            		// SNetcontroller will adjust the name and move to the gallery, if needed
+            		mSNetController.newMyPhoto(mMyName, image.getAbsolutePath(), mGalleryDirFile);
+            		
+            		// Try to update gallery viewer
+            		sendBroadcast(new Intent(
+            			    Intent.ACTION_MEDIA_MOUNTED,
+            			    Uri.parse("file://" + Environment.getExternalStorageDirectory())));            		
+            		
+            		showThumbnails();
+            	} catch (Exception e) {
+            		Log.e(TAG, "onActivity: " + e.getMessage());
+            	}
+            } else if (resultCode == RESULT_CANCELED) {
+                // User cancelled the image capture
+            } else {
+            	// Image capture failed, advise user
+            }
+        }
+    }    
+
+    public void onTakePhoto(View b) {
+        // create Intent to take a picture and return control to the calling application
+        Intent intent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+//        File image = new File(mGalleryDirFile, "newMyPhoto.jpg");
+//        Uri uriSavedImage = Uri.fromFile(image);
+//        intent.putExtra(MediaStore.EXTRA_OUTPUT, uriSavedImage);
+
+        // start the image capture Intent
+        startActivityForResult(intent, CAPTURE_IMAGE_ACTIVITY_REQUEST_CODE);        
+    }
+
+    public void onChoosePicture(View b) {
+    	Intent intent = new Intent(Intent.ACTION_PICK, android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI);
+    	intent.setType("image/*");
+    	Uri gallery = Uri.fromFile(mGalleryDirFile);
+    	//intent.setData(gallery);
+    	startActivityForResult(intent, CHOOSE_PICTURE_ACTIVITY_REQUEST_CODE);
+    }
+
+    public void onExchange(View b) {
+    	Intent intent = new Intent(this, ContactActivity.class);
+    	intent.putExtra("gallerypath", mGalleryDirFile.getAbsolutePath());
+    	intent.putExtra("snetdbdir", SNETDBDIR);    	
+    	startActivity(intent);
+    	//finish();
+    }
+
+    // callee side of fetchUpdates
+	public JSONObject _fetchUpdates(JSONObject args) throws Exception {
+		return mSNetController._fetchUpdates(args);
+	}
+	
+    // callee side of fetchPhoto
+	public JSONObject _fetchPhoto(JSONObject args) throws Exception {
+		return mSNetController._fetchPhoto(args);
+	}
+	
+	public String httpServe(String[] uriVec) throws DB461Exception {
+		return mSNetController.httpServe(uriVec);
+	}
+	
+	public void onConfigOk(View b) {
+        new Thread(){
+       	public void run() {
+               try {
+       			if ( !OS.isUp() ) OS.boot(getAssets().openFd(CONFIGFILENAME).createInputStream());
+       			mMyName = new DDNSFullName(OS.hostname());
+       			// technically, there's a race between the UI code and getting through setting mGalleryDirFile, but
+       			// it's clumsy to fix, and "unlikely to happen"
+       	        mGalleryDirFile = new File(Environment.getExternalStorageDirectory().getAbsolutePath() + "/SNetGallery-" + OS.hostname()); 
+       			if ( !mGalleryDirFile.exists() ) {
+       				String msg = "Gallery directory " + mGalleryDirFile.getAbsolutePath() + " doesn't seem to exist.  Creating."; 
+       				Log.e(TAG, msg);
+       				mGalleryDirFile.mkdirs();
+       			}
+
+       			mSNetController = new SNetController(SNETDBDIR);
+       			try {
+       				// register rpc interface
+       				RPCService rpcService = (RPCService)OS.getService("rpc");
+       				rpcService.registerHandler("snet", "fetchUpdates", fetchupdates );
+       				rpcService.registerHandler("snet", "fetchPhoto", fetchphoto );
+       				
+           			// make sure user is in db
+       				mSNetController.registerBaseUsers( mMyName );
+       				
+       			} catch (Exception e) {
+       				Log.e(TAG, "onCreate: " + e.getMessage());
+       			}
+               	
+               	runOnUiThread(new Runnable() {
+               		public void run() {
+               	        setContentView(R.layout.main);
+               			String msg = mSNetController.getStatusMsg();
+               	    	TextView myIpText = (TextView)findViewById(R.id.myiptext);
+                       	if ( myIpText != null ) myIpText.setText(msg);
+                       	showThumbnails();
+               		}
+               	});
+               	
+               } catch (Exception e) {
+               	Log.e(TAG, "Caught exception trying to display ip/port");
+               }
+       	}
+       }.start();
+}
+}

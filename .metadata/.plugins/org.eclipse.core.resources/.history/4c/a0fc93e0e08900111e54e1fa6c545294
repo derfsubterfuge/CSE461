@@ -1,0 +1,375 @@
+package edu.uw.cs.cse461.sp12.OS;
+
+import java.io.File;
+import java.io.FileInputStream;
+import java.util.Properties;
+import java.util.Timer;
+import java.util.Vector;
+
+import com.almworks.sqlite4java.SQLiteConnection;
+import com.almworks.sqlite4java.SQLiteException;
+import com.almworks.sqlite4java.SQLiteStatement;
+
+import edu.uw.cs.cse461.sp12.OS.DDNSService.FullName;
+import edu.uw.cs.cse461.sp12.util.Log;
+
+/**
+ * Abstracts the underlying sqlite database into a set of easy-to-use methods.
+ * <p>
+ * ONLY THE THREAD THAT OPENS AN SQLITE4JAVA DATABASE CAN OPERATE ON IT.
+ * This means you should not cache a NameManager.  Instead, create one
+ * one entry to your code, use it while that thread executes, and then discard
+ * it before returning.
+ * <p>
+ * The db has only one table, with fields:
+ * <ul>
+ * <li> name - A name (presumably a host name).
+ * <li> type - A record type name, of your choosing.
+ * <li> value - A value associated with the name/type pair. 
+ *             The value of this record may be <tt>null</tt>.  Note that the client
+ *             can distinguish between a record that exists and has a <tt>null</tt>
+ *             value and a record that doesn't exist.
+ * <li> authoritative - true or false.  Only records that are not authoritative 
+ *                      are eligible to be deleted by the cache cleaning method.
+ * <li> timestamp - Unix time stamp of last write of this record
+ * </ul>
+ * <p>
+ * The main supported operations are basically 'read' and 'write'.  Read returns
+ * an array containing zero or more rows.  Write updates, if a record
+ * with the corresponding keys already exists.  Otherwise, it inserts
+ * a new record.
+ * @author zahorjan
+ *
+ */
+public class NameManager {
+	private static String TAG="NameManager";
+	
+	public static final String TABLENAME = "names";
+	
+	private SQLiteConnection mDB;
+	
+	private static Timer mTimer = null;
+	
+	public static String[] fields[] = { {"name", "TEXT"},
+										{"type", "TEXT"},
+										{"value", "TEXT"},
+										{"authoritative", "INTEGER"},
+										{"timestamp", "INTEGER"}  // unix time record was last written
+	                                 };
+		
+	//------------------------------------------------------------------------------------------
+	//------------------------------------------------------------------------------------------
+	// Utility classes 
+	
+	/**
+	 * Exception class for NameManager exceptions.
+	 * @author zahorjan
+	 *
+	 */
+	 class NameException extends Exception {
+		private static final long serialVersionUID = 1L;
+		public NameException(String msg) {
+			super(msg);
+		}
+	}
+	
+	/**
+	 * One DB record.
+	 * <p>
+	 * Fields:
+	 * <ul>
+	 * <li>name - The name associated with the record.
+	 * <li>type - Primarily used to indicate "no record found," or else whether it was a host lookup or an app lookup
+	 * <li>value - The value associated with the (name, type) pair.
+	 * <li>authoritative - 1 for true; 0 for false
+	 * <li>timestamp - The Unix time when the record was last written.
+	 * </ul>
+	 * @author zahorjan
+	 *
+	 */
+	 class NameRecord {
+		FullName name;
+		String   type;
+		String   value;
+		boolean  authoritative;
+		int      timestamp;
+		@Override
+		public String toString() {
+			final String SEP = "  ";
+			StringBuilder sb = new StringBuilder();
+			sb.append("[");
+			sb.append(SEP).append("Name: '").append(name).append("'");
+			sb.append(SEP).append("Type: ").append(type);
+			sb.append(SEP).append("Value: ").append(value);
+			sb.append(SEP).append("Auth: ").append(authoritative);
+			sb.append(SEP).append("Time: ").append(timestamp);
+			sb.append("]");
+			return sb.toString();
+		}
+	}
+	
+	/**
+	 * A possibly-empty vector of records obtained by querying the db.
+	 * 
+	 * @author zahorjan
+	 */
+	 static class RecordSet extends Vector<NameRecord> {
+		private static final long serialVersionUID = 1L;
+		public static final char SEP = '\n';
+		@Override
+		public String toString() {
+			if ( this.size() <= 0 ) return "(empty)";
+			StringBuilder sb = new StringBuilder();
+			sb.append(this.get(0));
+			for( int i=1; i<this.size(); i++ ) {
+				sb.append(SEP).append(this.get(i));
+			}
+			return sb.toString();
+		}
+	}
+	
+	//------------------------------------------------------------------------------------------
+	//------------------------------------------------------------------------------------------
+	
+	/**
+	 * Constructor.  Only the thread that opens the db can operate on it.  The db is opened
+	 * in this constructor.  Therefore, you NameServer instances should be ephemeral -- create one
+	 * at the start of a single-threaded sequence of operations and then discard it.
+	 * @throws NameException
+	 */
+	 public NameManager() throws NameException {
+		
+		String dbFilename;
+		if ( OS.hostname().isEmpty()) dbFilename = "root.db";
+		else dbFilename = OS.hostname() + ".db";
+		
+		Log.d(TAG, "dbFilename = " + dbFilename);
+		
+		try {
+			// turn off annoying sqlite4java debug output
+			java.util.logging.Logger.getLogger("com.almworks.sqlite4java").setLevel(java.util.logging.Level.WARNING); 
+			
+			File dbFile = new File(dbFilename);
+			if ( !dbFile.exists() ) {
+				// need to initialize DB
+				mDB = new SQLiteConnection(new File(dbFilename));
+				mDB.open(true);
+
+				// create the names table
+				StringBuilder sb = new StringBuilder().append("CREATE TABLE IF NOT EXISTS ").append(TABLENAME).append(" (")
+														.append(fields[0][0]).append(" ").append(fields[0][1]);
+				for ( int i=1; i<fields.length; i++) {
+					sb.append(", ").append(fields[i][0]).append(" ").append(fields[i][1]);
+				}
+				sb.append(")");
+				_query(sb.toString());
+
+			} else {
+				mDB = new SQLiteConnection(new File(dbFilename));
+				mDB.open(true);
+			}
+
+		} catch (Exception e) {
+			String msg = "Constructor caught exception\n" + e.getMessage(); 
+			Log.e(TAG, msg);
+			throw new NameException(msg);
+		}
+	}
+	
+	/**
+	 * When you're done using a NameManager, it's good practice to call discard().
+	 */
+	public void discard() {
+		if ( mDB != null ) mDB.dispose();
+		if ( mTimer != null ) mTimer.cancel();
+	}
+	
+	//------------------------------------------------------------------------
+	// Methods for reading.
+	//------------------------------------------------------------------------
+	
+	private RecordSet _query(String query) throws NameException {
+		RecordSet result = new RecordSet(); 
+		SQLiteStatement st = null;
+		
+		if ( mDB == null ) throw new NameException("NameManager.query(" + query + "): db is not open");
+		
+		try {
+			st = mDB.prepare(query);
+			
+			while(st.step()) {
+				NameRecord row = new NameRecord();
+				// sqlite null seems to be stored as "null"
+				String recordname = st.columnString(0); 
+				if ( recordname.equals("null") ) recordname = null;
+				row.name = new FullName(recordname);
+
+				row.type = st.columnString(1);
+				row.type = row.type.equals("null")?null:row.type;
+
+				row.value = st.columnString(2);
+				row.value = row.value.equals("null")?null:row.value;
+
+				row.authoritative = st.columnInt(3) == 1;
+				row.timestamp = st.columnInt(4);
+				result.add(row);
+			}
+		} catch (SQLiteException e) {
+			String msg = "SQLiteException on query(" + query + "): " + e.getMessage();
+			Log.e(TAG, msg);
+			throw new NameException(msg);
+		} finally {
+			if ( st != null ) st.dispose();
+		}
+		return result;
+	}
+	
+	/**
+	 * Returns all records.
+	 */
+	public RecordSet read() throws NameException {
+		return _query("SELECT * FROM " + TABLENAME);
+	}
+	
+	/**
+	 * Returns all records matching the name field.
+	 */
+	public RecordSet read(FullName name) throws NameException {
+		return _query("SELECT * FROM " + TABLENAME + " WHERE name='" + name + "'");
+	}
+	
+	/**
+	 * Returns all records of the given type matching the name field.
+	 */
+	public RecordSet read (FullName name, String type) throws NameException {
+		return _query("SELECT * FROM " + TABLENAME + " WHERE name='" + name + "' and type='" + type + "'");
+	}
+	
+	/**
+	 * Retrieves records matching the given name and type and checks that there are only 0 or 1  of them.  Returns null if
+	 * there is no matching record.  Throws an exception if there is more than one
+	 * match.  Otherwise, returns the single record.
+	 */
+	public NameRecord readOneRecord(FullName name, String type) throws NameException {
+		RecordSet result = read(name, type);
+		if ( result.size() == 0 ) return null;
+		if ( result.size() > 1 ) throw new NameException("NameManager::readOneValue(" + name + ", " + type + "): Found " + result.size() + " matching records");
+		return result.get(0);
+	}
+	
+	//------------------------------------------------------------------------
+	// Methods for writing.
+	//------------------------------------------------------------------------
+	
+	/**
+	 * Updates existing rows of db with matching name and type.
+	 * Throws an error if there is no matching row.
+	 * @param data
+	 */
+	public void write(RecordSet data) {
+		//TODO: implement
+	}
+	
+	/**
+	 * Updates rows with matching name and type, if such rows exist.
+	 * Otherwise, inserts a new row.
+	 * @param data
+	 */
+	public void write(FullName name, String type, String value, boolean authoritative) throws NameException {
+		_query("DELETE FROM NAMES WHERE name='" + name + "' AND type='" + type + "'");
+		StringBuilder sb = new StringBuilder().append("INSERT INTO names (name, type, value, authoritative,timestamp) VALUES('")
+									          .append(name)
+									          .append("','")
+									          .append(type)
+									          .append("','")
+									          .append(value)
+									          .append("',")
+									          .append((authoritative?"1,":"0,"))
+									          .append(now())
+									          .append(")");
+		_query(sb.toString());
+	}
+	
+	/**
+	 * Deletes all non-authritative records older than argument interval seconds.
+	 * @param timestamp
+	 */
+	public void deleteNonAuthoritativeOlderThan(long interval) {
+		try {
+			if ( interval <= 1 ) throw new Exception("deleteNonAuthoritativeOlderThan: non-positive interval: " + interval);
+			long threshold = now() - interval;
+			Log.e(TAG, "cleaning old cached elements");
+			_query("DELETE FROM names WHERE authoritative==0 AND timestamp < " + threshold );
+		} catch (Exception e) {
+			Log.e(TAG, "deleteNonAuthoritativeOlderThan caught exception: " + e.getMessage());
+		}
+	}
+	
+	//------------------------------------------------------------------------
+	// db utility methods.
+	//------------------------------------------------------------------------
+	
+	public String toString() {
+		StringBuilder sb = new StringBuilder();
+		sb.append("DB Contents:\n");
+		try {
+			RecordSet rows = read();
+			sb.append(rows.toString());
+		} catch (NameException e) {
+			sb.append("NameManager.toString:: Caught exception.  Unable to read database\n");
+		}
+		return sb.toString();
+	}
+	
+	/**
+	 * Returns current Unix time (seconds since 1/1/1970).
+	 * @return
+	 */
+	public static long now() {
+		return System.currentTimeMillis()/1000L;
+	}
+	
+	/**
+	 * main() implements bare minimum, non-destructive test.
+	 * @param args
+	 */
+	public static void main(String[] args) {
+		final String TAG="NameManager.main";
+		
+		final class ThreadTester extends Thread {
+			Properties config;
+			public ThreadTester(Properties c) {
+				config = c;
+			}
+			public void run() {
+				try {
+					NameManager m = new NameManager();
+					Log.e(TAG, m.toString());
+					m.discard();
+				} catch (Exception e ) {
+					Log.e(TAG, "NameManager::main.ThreadTester caught exception: " + e.getMessage());
+				}
+			}
+		}
+		try {
+			String configFile = "config.ini"; // default value
+			if ( args.length > 0 ) configFile = args[0]; // lousy way to fetch args...
+
+			// read config file data
+			Properties config = new Properties();
+			config.load(new FileInputStream(configFile));
+
+			OS.boot(config);
+
+			new ThreadTester(config).start();
+
+			NameManager nameManager = new NameManager();
+			Log.e(TAG, nameManager.toString());
+			nameManager.discard();
+
+		} catch (Exception e) {
+			Log.e(TAG, "NameManager::main: caught exception: " + e.getMessage());
+		}
+	}
+
+}

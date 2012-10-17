@@ -1,0 +1,12 @@
+1337105092383	Extracts string 'null' into R.string.takepicture
+1337105129953	Extracts string 'null' into R.string.choosepicture
+1337105161430	Extracts string 'null' into R.string.updatepictures
+1337325407758	Rename resource 'jz.cse461.config.ini'
+1337357300998	Rename field 'configFilename'
+1337360157184	Rename field 'mGalleryDirPath'
+1337363422751	Rename local variable 'myFile'
+1337382805475	Extracts string 'null' into R.string.contact
+1337382838812	Extracts string 'null' into R.string.friend
+1337382894299	Extracts string 'null' into R.string.unfriend
+1337382931413	Extracts string 'null' into R.string.fixdb
+1337453616889	Rename local variable 'friendMap'

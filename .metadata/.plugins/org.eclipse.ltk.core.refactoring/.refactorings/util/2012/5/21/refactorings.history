@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<session version="1.0">
+<refactoring comment="Rename local variable &apos;otherFriendMap&apos; in &apos;edu.uw.cs.cse461.sp12.SNet.SNetController._fetchUpdates(...)&apos; to &apos;otherMemberMap&apos;&#x0A;- Original project: &apos;util&apos;&#x0A;- Original element: &apos;edu.uw.cs.cse461.sp12.SNet.SNetController._fetchUpdates(JSONObject).otherFriendMap&apos;&#x0A;- Renamed element: &apos;otherFriendMap&apos;&#x0A;- Update references to refactored element" description="Rename local variable &apos;otherFriendMap&apos;" id="org.eclipse.jdt.ui.rename.local.variable" input="/src&lt;edu.uw.cs.cse461.sp12.SNet{SNetController.java[SNetController~_fetchUpdates~QJSONObject;@otherFriendMap!7732!7791!7743!7756!QJSONObject;!0!false" name="otherMemberMap" references="true" stamp="1337574931334" version="1.0"/>
+</session>

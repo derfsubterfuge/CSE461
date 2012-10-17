@@ -1,0 +1,293 @@
+package edu.uw.cs.cse461.NetBase;
+
+import java.io.FileInputStream;
+import java.util.HashMap;
+import java.util.Set;
+
+import edu.uw.cs.cse461.NetBase.NetLoadableInterface.NetLoadableApp;
+import edu.uw.cs.cse461.NetBase.NetLoadableInterface.NetLoadableService;
+import edu.uw.cs.cse461.util.Log;
+
+/**
+ * A singleton class (only one instance can exist) implementing core network stack functionality.
+ * It is initialized by calling init() and then startServices().
+ * It's shut down by calling shutdown(). Its major responsibility is to bring up
+ * services, like rpc, and make them available to apps (via getService()).
+ * 
+ * @author zahorjan
+ * 
+ */
+public class NetBase implements NetBaseInterface {
+	private static final String TAG = "NetBase";
+
+	private static NetBase theNetBaseInstance = new NetBase();  // the singleton OS instance
+	
+	private boolean mAmShutdown = true;
+	private NetProperties mConfig;
+	private String mHostname;
+
+	/**
+	 * Used to keep track of started services. The String key is the name
+	 * returned by the // service's servicename() method.
+	 */
+	private static HashMap<String, NetLoadableService> serviceMap = new HashMap<String, NetLoadableService>();
+
+	/**
+	 * Used to keep start of loaded apps.
+	 */
+	private static HashMap<String, NetLoadableApp> mAppMap = new HashMap<String, NetLoadableApp>();
+
+	/**
+	 * Only this class can construct an instance of itself, and it does that only once, to initialize static variable theOSInstance.
+	 */
+	private NetBase() {
+	}
+	
+	/**
+	 * Returns the singleton NetBase instance
+	 * @return
+	 */
+	public static NetBase theNetBase() {
+		return theNetBaseInstance;
+	}
+
+	/**
+	 * Brings up the NetBase, then loads services, then starts the shell program.
+	 * 
+	 * @param config
+	 *            Configuration settings read by caller from a config file.
+	 * @throws Exception
+	 */
+	public synchronized void init(FileInputStream configFileInputStream)
+			throws Exception {
+		Log.e(TAG, "NetBase initializinging");
+		// sanity check
+		if (!mAmShutdown)
+			throw new RuntimeException(
+					"Call to NetBase.init() but NetBase is already initialized!");
+
+		
+		// try to read configuration file
+
+		mConfig = new NetProperties();
+
+		if (configFileInputStream == null) {
+			Log.e(TAG, "configFileInputStream is null in call to OS::boot()");
+		} else {
+			// can't pass config file name in because Android won't tell us the path
+			// to our assets
+			// mConfig.load(new FileInputStream(configFilename));
+			mConfig.load(configFileInputStream);
+		}
+
+		int showDebug = mConfig.getInt("debug.enable", 1, TAG);
+		Log.setShowLog(showDebug != 0);
+		int debugLevel = mConfig.getInt("debug.level", Log.DebugLevel.DEBUG.toInt(), TAG);
+		Log.setLevel(debugLevel);
+
+		// code uses the host name a lot, so cache it in it's typical form (no
+		// trailing '.')
+		mHostname = mConfig.getProperty("os.hostname");
+		if (mHostname == null) {
+			Log.w(TAG, "OS: no os.hostname entry in config file");
+			mHostname = "";
+		} else {
+			// convert full name to more colloquial name (no trailing period) 
+			if (mHostname.equals(".")) mHostname = "";
+			else if (mHostname.endsWith("."))
+				mHostname = mHostname.substring(0, mHostname.length() - 1);
+		}
+		Log.w(TAG, "Booting host '" + mHostname + "'");
+
+		mAmShutdown = false; // at this point, we're up, but with no services
+								// running
+
+		_startServices();
+		_loadApps();
+
+		// if there is an initialapp app, start it. Otherwise, just run as a
+		// daemon
+		String initialAppName = config().getProperty("os.initialapp");
+		if (initialAppName == null) {
+			// run as daemon... simply exit, without shutting down. This app
+			// won't exit, because there
+			// have been
+		} else {
+			try {
+				startApp(initialAppName);
+			} catch (Exception e) {
+				Log.e(TAG,
+						initialAppName + " threw exception: " + e.getMessage());
+			}
+			shutdown(); // we're done when the inital app terminates
+		}
+	}
+	
+	/**
+	 * Starts "OS resident" services. The argument is an array of class names.
+	 * Two useful lists are included as static OS class variables:
+	 * rpcServiceClasses and ddnsServiceClasses.
+	 * 
+	 * @param serviceClassList
+	 *            Entries are fully qualified class names.
+	 */
+	private void _startServices() {
+		String classListStr = config().getProperty("os.services");
+		if (classListStr == null) {
+			Log.w(TAG, "Missing or empty os.services in config file.  OS won't run this way.");
+			return;
+		}
+		String[] serviceClassList = classListStr.split("[\\s]+");
+
+		String startingService = null; // for debugging output in catch block
+		for (String serviceClassname : serviceClassList) {
+			try {
+				Log.d(TAG, "Starting service " + serviceClassname);
+				startingService = serviceClassname;
+				// Get the Java Class object
+				Class<NetLoadableService> serviceClass = (Class<NetLoadableService>) Class
+						.forName(serviceClassname);
+				// Create an instance of the class
+				NetLoadableService service = serviceClass.newInstance();
+				// Record the instance in a Map, keyed by the service's
+				// self-proclaimed name
+				serviceMap.put(service.loadablename(), service);
+				Log.i(TAG, serviceClassname + " started");
+			} catch (Exception e) {
+				Log.e(TAG, "Error while starting service " + startingService
+						+ ": " + e.getMessage());
+			}
+		}
+	}
+
+	public Set<String> loadedServiceNames() {
+		return serviceMap.keySet();
+	}
+
+	private void _loadApps() {
+		String startingApp = null; // for debugging output in catch block
+		String classListStr = config().getProperty("os.apps");
+		if (classListStr == null)
+			return;
+		String[] appClassList = classListStr.split("[\\s]+");
+		for (String appClassname : appClassList) {
+			try {
+				Log.d(TAG, "Starting app " + appClassname);
+				startingApp = appClassname;
+				Class<NetLoadableApp> appClass = (Class<NetLoadableApp>) Class.forName(appClassname);
+				NetLoadableApp app = appClass.newInstance();
+				mAppMap.put(app.loadablename(), app);
+				Log.i(TAG, appClassname + " Loaded");
+			} catch (ClassNotFoundException nfe) {
+				Log.e(TAG, "ClassNotFoundException for " + startingApp);
+			} catch (Exception e) {
+				Log.e(TAG,
+						"Exception loading app " + startingApp + ": "
+								+ e.getMessage());
+			}
+		}
+	}
+
+	public Set<String> loadedAppNames() {
+		return mAppMap.keySet();
+	}
+
+	/**
+	 * Runs an app.
+	 * 
+	 * @param appname
+	 *            The name returned by the app's appname() method
+	 */
+	public void startApp(String appname) throws Exception {
+		NetLoadableApp app = mAppMap.get(appname);
+		if (app == null)
+			throw new RuntimeException("App doesn't exist: '" + appname + "'");
+		app.run();
+	}
+
+	/**
+	 * Shutdown associated services and the OS. The main point is to terminate
+	 * threads, so that app can terminate. If you don't shut down various
+	 * services, the odds are the app won't terminate even if the main thread
+	 * exits.
+	 */
+	public synchronized void shutdown() {
+		if (mAmShutdown)
+			return;
+		Log.e(TAG, "OS shutting down...");
+		try {
+			for (String serviceName : serviceMap.keySet()) {
+				NetLoadableInterface service = serviceMap.get(serviceName);
+				service.shutdown();
+			}
+			// We can't remove items from the HashMap while iterating
+			serviceMap.clear();
+		} catch (Exception e) {
+			Log.e(TAG, "Error shutting down services: " + e.getMessage());
+			throw new RuntimeException(e.getMessage());
+		}
+		mAmShutdown = true;
+	}
+
+	/**
+	 * Helper function that simply makes sure the OS is running when calls to it
+	 * are made.
+	 * 
+	 * @param method
+	 */
+	private void check(String method) {
+		if (mAmShutdown)
+			throw new RuntimeException("OS." + method
+					+ " called when OS isn't running");
+	}
+
+	/**
+	 * Get access to the configuration properties read from the config file
+	 * specified at launch.
+	 * 
+	 * @return
+	 */
+	public NetProperties config() {
+		check("getConfig");
+		return mConfig;
+	}
+
+	/**
+	 * Returns this host's name, if it has one, otherwise null. (This isn't
+	 * useful until Project 4.)
+	 * 
+	 * @return
+	 */
+	public String hostname() {
+		check("hostname");
+		return mHostname;
+	}
+
+	/**
+	 * Takes the value returned by the loadablename() method of the service
+	 * you're looking for, and returns that service. (E.g., call with arg "rpc"
+	 * to get the RPC service.)
+	 * 
+	 * @param servicename
+	 * @return
+	 */
+	public NetLoadableService getService(String servicename) {
+		check("getService(" + servicename + ")");
+		return serviceMap.get(servicename);
+	}
+
+	public OSLoadableApp getApp(String appname) {
+		check("getApp(" + appname + ")");
+		return mAppMap.get(appname);
+	}
+
+	/**
+	 * Returns current Unix time (seconds since 1/1/1970).
+	 * 
+	 * @return
+	 */
+	public long now() {
+		return System.currentTimeMillis() / 1000L;
+	}
+
+}

@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<session version="1.0">
+<refactoring comment="Rename field &apos;exchange&apos; in &apos;edu.uw.cs.cse461.sp12.SNet.SNetActivity&apos; to &apos;fetchupdates&apos;&#x0A;- Original project: &apos;SNetAndroid&apos;&#x0A;- Original element: &apos;edu.uw.cs.cse461.sp12.SNet.SNetActivity.exchange&apos;&#x0A;- Renamed element: &apos;edu.uw.cs.cse461.sp12.SNet.SNetActivity.fetchupdates&apos;&#x0A;- Update references to refactored element&#x0A;- Update textual occurrences in comments and strings" delegate="false" deprecate="false" description="Rename field &apos;exchange&apos;" flags="589826" getter="false" id="org.eclipse.jdt.ui.rename.field" input="/src&lt;edu.uw.cs.cse461.sp12.SNet{SNetActivity.java[SNetActivity^exchange" name="fetchupdates" references="true" setter="false" stamp="1337558548014" textual="false" version="1.0"/>
+</session>

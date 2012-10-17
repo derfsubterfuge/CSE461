@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<session version="1.0">
+<refactoring comment="Copy element &apos;Echo.java&apos; to &apos;OSConsoleApps/src/edu.uw.cs.cse461.sp12.OSConsoleApps&apos;&#x0A;- Original project: &apos;OSConsoleApps&apos;&#x0A;- Destination element: &apos;OSConsoleApps/src/edu.uw.cs.cse461.sp12.OSConsoleApps&apos;&#x0A;- Original element: &apos;edu.uw.cs.cse461.sp12.OSConsoleApps.Echo.java&apos;" description="Copy compilation unit" destination="/src&lt;edu.uw.cs.cse461.sp12.OSConsoleApps" element1="/src&lt;edu.uw.cs.cse461.sp12.OSConsoleApps{Echo.java" files="0" flags="589830" folders="0" id="org.eclipse.jdt.ui.copy" policy="org.eclipse.jdt.ui.copyResources" stamp="1335853936309" units="1" version="1.0"/>
+</session>

@@ -1,0 +1,44 @@
+package edu.uw.cs.cse461.sp12.OS;
+
+import java.io.File;
+
+import com.almworks.sqlite4java.SQLiteConnection;
+
+public class NameManager_DB {
+	private final String TAG="NameManager_DB";
+	public static String[] fields[] = { {"name", "TEXT"},
+										{"type", "TEXT"},
+										{"value", "TEXT"},
+										{"authoritative", "INTEGER"},
+										{"timestamp", "INTEGER"}  // unix time record was last written
+     								  };
+
+	
+	public static final String TABLENAME = "names";
+	
+	private SQLiteConnection mDB;
+	
+	void openOrCreateDatabase(String dbName) {
+		File dbFile = new File(dbName);
+		if ( !dbFile.exists() ) {
+			// need to initialize DB
+			mDB = new SQLiteConnection(dbFile);
+			mDB.open(true);
+
+			// create the names table
+			StringBuilder sb = new StringBuilder().append("CREATE TABLE IF NOT EXISTS ").append(TABLENAME).append(" (")
+													.append(fields[0][0]).append(" ").append(fields[0][1]);
+			for ( int i=1; i<fields.length; i++) {
+				sb.append(", ").append(fields[i][0]).append(" ").append(fields[i][1]);
+			}
+			sb.append(")");
+			_query(sb.toString());
+
+		} else {
+			mDB = new SQLiteConnection(new File(dbFilename));
+			mDB.open(true);
+		}
+	}
+	
+
+}

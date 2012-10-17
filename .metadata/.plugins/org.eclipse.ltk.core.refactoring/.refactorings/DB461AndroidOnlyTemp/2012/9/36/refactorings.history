@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<session version="1.0">
+<refactoring comment="Move package &apos;edu.uw.cs.cse461.DB461&apos; to &apos;DB461AndroidOnly/src&apos;&#x0A;- Original project: &apos;DB461AndroidOnlyTemp&apos;&#x0A;- Destination element: &apos;DB461AndroidOnly/src&apos;&#x0A;- Original element: &apos;DB461AndroidOnlyTemp/src/edu.uw.cs.cse461.DB461&apos;&#x0A;- Update references to refactored element" description="Move package" destination="=DB461AndroidOnly/src" element1="/src&lt;edu.uw.cs.cse461.DB461" flags="589830" fragments="1" id="org.eclipse.jdt.ui.move" policy="org.eclipse.jdt.ui.movePackages" stamp="1347124052183" version="1.0"/>
+</session>

@@ -1,0 +1,40 @@
+1346906915946	Rename type 'OSLoadable'
+1346912079995	Move compilation unit
+1346912092406	Move compilation unit
+1346912101598	Move compilation unit
+1346912113287	Move compilation unit
+1346912122564	Move compilation unit
+1346912132139	Move compilation unit
+1346912157874	Move compilation unit
+1346912170857	Move compilation unit
+1346912177416	Move compilation unit
+1346913935781	Move compilation unit
+1346913949021	Move compilation unit
+1346913956094	Move compilation unit
+1346913968338	Move compilation unit
+1346956064607	Rename package 'edu.uw.cs.cse461.OS'
+1346956090242	Rename type 'OS'
+1346956117174	Rename type 'OSInterface'
+1346956267303	Rename field 'theOSInstance'
+1346956285496	Rename method 'theOS'
+1346956316345	Rename method 'boot'
+1346956388135	Rename type 'OSProperties'
+1346956402456	Rename type 'OSPropertiesInterface'
+1346956423218	Rename type 'OSLoadableInterface'
+1346956483623	Rename type 'OSLoadableService'
+1346959047345	Rename package 'edu.uw.cs.cse461.OS.DDNS'
+1346964977420	Move package
+1346965028732	Move compilation unit
+1346965042969	Move compilation unit
+1346965246604	Move package
+1346965280741	Move package
+1346974713707	Delete element
+1346975226611	Delete element
+1346975238209	Delete elements
+1346975263849	Delete element
+1346975279768	Delete element
+1347043403052	Rename type 'EchoService'
+1347043415751	Move compilation unit
+1347057662520	Move compilation unit
+1347057678425	Move compilation unit
+1347064798719	Rename source folder 'src'

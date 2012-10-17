@@ -1,0 +1,515 @@
+package edu.uw.cs.cse461.sp12.OS;
+
+import java.util.Vector;
+
+import org.apache.commons.cli.CommandLine;
+import org.apache.commons.cli.CommandLineParser;
+import org.apache.commons.cli.HelpFormatter;
+import org.apache.commons.cli.Options;
+import org.apache.commons.cli.PosixParser;
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import edu.uw.cs.cse461.sp12.OS.DDNSException.DDNSNoAddressException;
+import edu.uw.cs.cse461.sp12.OS.DDNSException.DDNSNoSuchNameException;
+import edu.uw.cs.cse461.sp12.OS.DDNSException.DDNSRuntimeException;
+import edu.uw.cs.cse461.sp12.OS.DDNSException.DDNSTTLExpiredException;
+import edu.uw.cs.cse461.sp12.OS.DDNSRRecord.ARecord;
+import edu.uw.cs.cse461.sp12.OS.DDNSRRecord.NSRecord;
+import edu.uw.cs.cse461.sp12.OS.DDNSRRecord.RRType;
+import edu.uw.cs.cse461.sp12.OS.DDNSRRecord.SOARecord;
+import edu.uw.cs.cse461.sp12.OS.HTTPDService.HTTPProvider;
+import edu.uw.cs.cse461.sp12.OS.OSLoadable.OSLoadableService;
+import edu.uw.cs.cse461.sp12.util.Log;
+
+/**
+ * Protocol: Based on RPC.  The calls:
+ * <p>
+ * Request:  method: "register" 
+ *           args: 
+ * <br>Response:  void
+ * <p>
+ * Fetch all records (for all apps) for a specific host.
+ * Request:  method: "fetchall"
+ *           args:  {host: hostname}
+ * <br>Response:  [ [appname, port, authoritative], ...]
+ *
+ * <pre>
+ * app:"ddns" supports RPC calls:
+ *     register( {host: hostname,  ip: ipaddr,   port: portnum} ) => { status: "OK" } or errormsg
+ *     resolve( { host: hostname } ) => { host: repeats hostname, ip: ip address, authoritative: boolean } ) or errormsg
+ * </pre>
+ * 
+ *  * @author zahorjan
+ *
+ */
+public class DDNSService implements OSLoadableService, HTTPProvider {
+	private static String TAG="DDNSService";
+	private static final int MAXRESOLUTIONDEPTH = 20;  // maximum depth we're willing to go in recursive name resolution
+	
+	private DDNSNode mRoot;  // root of name tree
+	private DDNSFullName mSoaName; // root name of my zone
+	private String mMyPassword;
+	
+	private RPCCallableMethod<DDNSService> register;
+	private RPCCallableMethod<DDNSService> resolve;
+
+	@Override
+	public String loadablename() { return "ddns"; }
+	
+	/**
+	 * Called to end execution.  Specifically, need to terminate any threads we've created.
+	 */
+	@Override
+	public void shutdown() { }
+	
+	@Override
+	public String httpServe(String[] uriArray) { return toString();	}
+
+	/**
+	 * Constructor.  Registers the system RPCServerSocket with the parent as
+	 * this host's ip address.  Registers the root server and itself in the
+	 * local name cache.
+	 * @throws DDNSException
+	 */
+	DDNSService() throws DDNSException {
+		
+		try {
+			mRoot = null;
+			
+			//--------------------------------------------------------------
+			// get this host's address
+			//--------------------------------------------------------------
+
+			RPCService rpcService = (RPCService)OS.getService("rpc");
+			String myIP = rpcService.localIP();
+			int myPort = rpcService.localPort();
+			Log.d(TAG, "myAddress = " + myIP + ":" + myPort);
+			
+			//--------------------------------------------------------------
+			// create name tree
+			//    Example: ddns.soa = jz.cse461.:<my own password for this soa>
+			//             ddns.parent=cse461.:<password to update parent>
+			//--------------------------------------------------------------
+
+			// soa entry has name:<password to update this record>
+			Vector<String[]> soaVec = namePasswordReader( OS.config().getProperty("ddns.soa") );
+			if ( soaVec.size() != 1 ) throw new DDNSRuntimeException("Invalid or missing ddns.soa entry in config file");
+			mSoaName = new DDNSFullName(soaVec.elementAt(0)[0]);
+			mMyPassword = soaVec.elementAt(0)[1];
+
+			// parent entry has <parent name server name>:<password to update my ns record in the parent>
+			DDNSFullName parentServer = null;
+			String parentPassword = null; 
+			if ( !mSoaName.equals(DDNSFullName.ROOTNAME) ) {
+				// any ddns.parent record in the config file for the root is ignored
+				Vector<String[]> parentVec = namePasswordReader(OS.config().getProperty("ddns.parent"));
+				if ( parentVec.size() != 1 ) throw new DDNSRuntimeException("Invalid or missing ddns.parent entry in config file");
+				parentServer = new DDNSFullName( parentVec.elementAt(0)[0] );
+				parentPassword = parentVec.elementAt(0)[1];
+			}
+
+			// this node must be added first to tree, to establish it as root
+			addName( new DDNSNode( mSoaName, mMyPassword, new SOARecord(myIP, myPort, parentServer, parentPassword) ), mMyPassword );
+			
+			//--------------------------------------------------------------
+			// add name server leaves
+			//   Entries in config file are <nameservername>:<password to update this record>
+			//--------------------------------------------------------------
+			
+			Vector<String[]> nsVec = namePasswordReader( OS.config().getProperty("ddns.ns") );
+			for (String[] entry : nsVec ) {
+				addName( new DDNSNode( new DDNSFullName(entry[0]), entry[1], new NSRecord()), mMyPassword );
+			}
+			
+			//--------------------------------------------------------------
+			// set up RPC callable methods
+			//--------------------------------------------------------------
+
+			// export methods via the rpc service
+			register = new RPCCallableMethod<DDNSService>(this, "_register");
+			resolve = new RPCCallableMethod<DDNSService>(this, "_rpcResolve");
+
+			rpcService.registerHandler(loadablename(), "register", register );
+			rpcService.registerHandler(loadablename(), "resolve", resolve );
+			
+			Log.d(TAG, "Starting ddns service for zone '" + this.mSoaName + "' on host '" + OS.hostname() + "' on port " + myPort);
+			Log.d(TAG, toString());
+
+		} catch (Exception e) {
+			String msg = "DDNSService constructor caught exception: " + e.getMessage();
+			Log.e(TAG, msg);
+			throw new DDNSRuntimeException(msg);
+		}
+	}
+	
+	public DDNSFullName soaName() { 
+		return this.mSoaName;
+	}
+	
+	private static Vector<String[]> namePasswordReader(String rawString) throws DDNSRuntimeException {
+		Vector<String[]> result = new Vector<String[]>();
+		if ( rawString == null ) return result;
+		
+		String[] strVec = rawString.split("[\\s]+");
+		for (String entry : strVec ) {
+			String[] token = entry.split("[:]");
+			if ( token.length != 2 ) throw new DDNSRuntimeException("Illegal ddns record entry: '" + entry + "'");
+			result.add(token);
+		}
+		return result;
+	}	
+
+		
+	//---------------------------------------------------------------------------------------------------------------------------
+	// name tree manipulation
+	
+	/**
+	 * This routine injects new names into the tree.  It turns out to be handy to allow injection of names
+	 * that are not immediate children of any existing node.  When that happens, we create the missing nodes,
+	 * setting them up as negative A records.
+	 * @param node
+	 * @param password
+	 * @return
+	 * @throws DDNSException
+	 */
+	private synchronized DDNSNode addName(DDNSNode node, String password) throws DDNSException {
+		
+		//NOTE: If root is null, we never check authorization!
+		if ( mRoot == null ) {
+			node.record().setAuthoritative(true);
+			mRoot = node;
+			return mRoot;
+		}
+		
+		DDNSFullName nodeName = node.name();
+		
+		DDNSNode attachNode = _findLast(nodeName, new Integer(MAXRESOLUTIONDEPTH));
+		// node exists
+		if ( attachNode.name().equals(node.name()) ) throw new DDNSRuntimeException("addNode: Node " + nodeName + " already exists");
+		// found a node leading us out of our zone
+		if ( attachNode.record().type() == RRType.RRTYPE_NS )
+			throw new DDNSRuntimeException("addnode: Node " + nodeName + " belongs to some other zone: found NS record for '" + attachNode.name() + "'");
+		
+		// found immediate parent
+		if ( nodeName.parent().equals(attachNode.name()) ) {
+			node.record().setAuthoritative(true);
+			attachNode.addChild(node, password);   // auth check happens here
+			return node;
+		}
+		
+		// need to create an intermediary node and try again
+		DDNSNode newNode = new DDNSNode( attachNode.name().nextAncestor(nodeName), password, new ARecord(null, -1));
+		newNode.record().setAuthoritative(true);
+		attachNode.addChild(newNode, password);
+		return addName(node, password);
+	}
+	
+	private DDNSNode _find(DDNSFullName name, Integer resolveTTL) throws DDNSException {
+		DDNSNode result = null;
+		result= _findLast(name, resolveTTL);
+		if ( result==null || !result.name().equals(name) ) throw new DDNSNoSuchNameException(name);
+		return result;
+	}
+
+	/**
+	 * Resolve name as far as possible, and return node you end up on.
+	 * @param name
+	 * @return
+	 */
+	private DDNSNode _findLast(DDNSFullName fullname, Integer resolveTTL) throws DDNSException {
+		String name = fullname.toString();
+		String suffix = mRoot.name().toString();
+		if ( !name.endsWith(suffix) ) throw new DDNSRuntimeException("Node " + name + " isn't in this zone [" + suffix + "]");
+		
+		name = name.substring(0, name.length() - suffix.length() );
+		String[] token = name.split("\\.");
+		int index;
+		DDNSNode attachNode = mRoot;
+		DDNSNode nextNode;
+		for ( index = token.length-1; index >= 0; attachNode = nextNode, index-- ) {
+			nextNode = attachNode.child(new DDNSFullName(token[index] + "." + attachNode.name()));
+			if ( nextNode == null ) break;
+			if ( --resolveTTL <= 0 ) throw new DDNSTTLExpiredException(fullname);
+		}
+		return attachNode;
+	}
+	
+	
+	//---------------------------------------------------------------------------
+	// RPC callable routines
+	
+	/**
+	*     register( {host: hostname, password: password, ip: ipaddr,  port: portnum} ) => { status: "OK" } or errormsg
+	*<p>
+	* We accept only requests for names stored on this server.
+	* 
+	* @param args
+	* @return
+	*/
+	public synchronized JSONObject _register(JSONObject args) throws JSONException, DDNSException {
+		Log.i(TAG, "_register(" + args + ")");
+		
+		// only fullnames go in the db
+		DDNSFullName newHost = new DDNSFullName(args.getString("host"));
+		
+		DDNSNode node = _find(newHost, new Integer(MAXRESOLUTIONDEPTH));
+		
+		String ip = args.getString("ip");
+		int port = args.getInt("port");
+		Log.e(TAG, "ip = " + ip + "  port = " + port);
+		node.setRecord( new ARecord(ip, port), args.getString("password") );
+
+		return null;
+	}
+	
+	
+	/**
+	 * Indicates host is going offline.
+	 *      unregister( {host: hostname, password: password, ip: ipaddr,  port: portnum} ) => { status: "OK" } or errormsg
+	 * @param args
+	 * @return
+	 * @throws JSONException
+	 * @throws DDNSException
+	 */
+	public JSONObject _unregister(JSONObject args) throws DDNSException {
+		try {
+			DDNSFullName host = new DDNSFullName(args.getString("host"));
+		
+			//TODO: implement
+			return null;
+		} catch (Exception e) {
+			Log.e(TAG, "_unregister caught exception: " + e.getMessage());
+			throw new DDNSRuntimeException(e.getMessage());
+		}
+	}
+
+	/**
+	 * This version is invoked via RPC.  It's simply a wrapper that extracts the call arguments
+	 * and invokes resolve(host).
+	 * @param callArgs
+	 * @return
+	 */
+	public JSONObject _rpcResolve(JSONObject args) throws DDNSException {
+		Log.i(TAG, "_resolve(" + args + ")");
+		JSONObject result = new JSONObject();
+		
+		// resolve calls don't require passwords
+
+		try {
+			String hostStr = args.getString("host");
+			if ( hostStr == null ) throw new JSONException("Malformed call arguments: '" + args.toString() + "'");
+			DDNSFullName host = new DDNSFullName(hostStr);
+			
+			Integer resolveTTL = new Integer( args.getInt("ttl") );
+
+			//TODO: What if returned value is an NSRecord?
+			DDNSNode resultNode = resolve(host, resolveTTL); 
+			ARecord address = (ARecord)resultNode.record();  // will throw exception if record is incompatible with ARecord
+			if ( address.isNegative() ) throw new DDNSNoSuchNameException( host );
+
+			result.put("host", host)
+			      .put("ip", address.ip())
+			      .put("port", address.port())
+			      .put("auth", address.authoritative())
+			      .put("negative", address.isNegative());
+			
+		} catch (DDNSException de) {
+			throw de;
+		} catch (Exception e) {
+			throw new DDNSRuntimeException(e.getMessage());
+		}
+
+		return result;
+	}
+	
+	// RPC callable routines
+	//---------------------------------------------------------------------------
+
+	//---------------------------------------------------------------------------
+	// resolve routines
+	public final DDNSNode resolve(DDNSFullName host) throws DDNSException {
+		return resolve(host, new Integer(MAXRESOLUTIONDEPTH));
+	}
+		
+	/**
+	 * If no desired record type is given, assume caller wants an ARecord.  Find and return that.
+	 */
+	public final DDNSNode resolve(DDNSFullName host, Integer resolveTTL) throws DDNSException {
+		Log.d(TAG, "Resolve(" + host + ", " + resolveTTL + ")");
+		return resolve(host, RRType.RRTYPE_A, resolveTTL);
+	}
+	
+	/**
+	 * Resolves a host name to its resource record.  The host name must be reachable from the soa of this ddnsservice.
+	 *
+	 * @param host The host name (e.g., "jz.cse461")
+	 * @param type The desired RRType of the record.
+	 * @return The RRecord of type type, if it exists.  Otherwise, and exception is thrown.
+	 */
+	public final DDNSNode resolve(DDNSFullName host, RRType type, Integer resolveTTL) throws DDNSException {
+		Log.d(TAG, "resolve(" + host + ", " + type + ")");
+
+		try {
+			DDNSNode responseNode = _findLast(host, resolveTTL);
+			DDNSRRecord responseRecord = responseNode.record();
+			
+			// found it?
+			if ( responseRecord.type() == RRType.RRTYPE_A || responseRecord.type()== RRType.RRTYPE_SOA) return responseNode;
+
+			// CNAME -- let caller deal with it...
+			if ( responseRecord.type() == RRType.RRTYPE_CNAME ) return responseNode;
+			
+			// ran into an NS record
+			if ( responseRecord.type() == RRType.RRTYPE_NS ) {
+				NSRecord nsRecord = (NSRecord)responseRecord;
+				
+				if ( nsRecord.isNegative() ) throw new DDNSNoAddressException( responseNode.name() );
+			
+				RPCCallerSocket socket = new RPCCallerSocket(responseNode.name().toString(),
+						                                     nsRecord.ip(),
+						                                     nsRecord.port()
+						                                    );
+				JSONObject response = socket.invoke( loadablename(), 
+						                             "resolve",
+						                             new JSONObject().put("host", host.toString())
+						                                             .put("ttl", resolveTTL.intValue()-1)
+						                           );
+				String responseHost = (String)response.get("host"); 
+				if ( responseHost==null || !responseHost.equals(host.toString()) )
+					throw new DDNSRuntimeException("Requested name " + host + ", got response for name '" + responseHost + "'");
+				if ( response.get("rr") == null ) throw new DDNSNoSuchNameException(host); // no such name exists
+
+				ARecord addressRecord = (ARecord)DDNSRRecord.jsonObjectToRRecord(response);
+				if ( addressRecord.isNegative() ) throw new DDNSNoAddressException( new DDNSFullName(responseHost) );
+				return new DDNSNode( new DDNSFullName(responseHost), null, addressRecord);
+			}
+			
+			throw new DDNSRuntimeException("Encountered node of type " + responseRecord.type() + " resolving name '" + host + "'");
+			
+		} catch (Exception e) {
+			String msg = "resolve(" + host + "," + type + "): " + e.getMessage();
+			Log.e(TAG, msg);
+			throw new DDNSRuntimeException(msg);
+		}
+	}
+	
+	// resolve routines
+	//---------------------------------------------------------------------------
+	
+	//---------------------------------------------------------------------------
+	// register routines
+	
+	/**
+	 * Update address mapping.  The interface allows only a host specification.
+	 * The port given is implicitly for the RPC service on that host.
+	 * <p>
+	 * Works only on names stored locally -- no forwarding is done
+	 * 
+	 * @param host The name of the host for this mapping.
+	 * @param ip  That host's IP address.
+	 * @param port The port of the RPC service on that host.
+	 */
+	private synchronized DDNSNode  _register(DDNSFullName host, String ip, int port) throws DDNSException {
+		Log.d(TAG, "_register(" + host + ", " + ip + ", " + port + ")");
+		
+		DDNSNode node = _find(host, new Integer(MAXRESOLUTIONDEPTH));
+		if ( node == null ) throw new DDNSNoSuchNameException(host);
+		
+		//TODO: Implement
+
+		try {
+			DDNSFullName myHost = new DDNSFullName(OS.hostname());
+			// Only the entries for this host and for the root are authoritative - others
+			// can change, and must be purged from the cache periodically.
+			boolean auth = (host.toString().isEmpty() || host.equals(myHost));
+//			manager = new NameManager();
+//			manager.write(host, RRType.RRTYPE_A.toString(), ip, auth);
+//			manager.write(host, RRType.RRTYPE_RPC.toString(), port, auth);
+
+		} catch (Exception e) {
+			Log.e(TAG, "_register caught exception " + e.getMessage());
+		}
+		
+		return node;
+	}
+	
+	
+	/**
+	 * Given an argument name like "www" and soa name <soaname>, registers a node for
+	 * name www.<soaname>
+	 * @param name
+	 */
+	DDNSNode registerRelative(String name, String ip, int port) throws DDNSException {
+		return _register( new DDNSFullName(name + '.' + mSoaName), ip, port );
+	}
+	// register routines
+	//---------------------------------------------------------------------------
+	
+		
+	/**
+	 * The usual toString.
+	 */
+	public String toString() {
+		StringBuilder sb = new StringBuilder();
+		String currentName = OS.hostname();
+		sb.append("Hostname: ");
+		if ( currentName != null ) sb.append(currentName).append("\n");
+		else sb.append("undefined\n");
+		
+		mRoot._toString(sb,  "");
+		return sb.toString();
+	}
+
+	/**
+	 * A simple test driver that ends up dumping the current cached naming information.
+	 * @param args
+	 */
+	public static void main(String[] args) {
+		final String TAG="DDNSAgent.main";
+		String configFilename = "config.ini";
+		try {
+			// This code deals with command line options
+			Options options = new Options();
+			options.addOption("f", "configfile", true, "Config file name (Default: " + configFilename + ")");
+			options.addOption("h", "help", false, "Print this message");
+
+			CommandLineParser parser = new PosixParser();
+
+			CommandLine line = parser.parse(options, args);
+			if ( line.hasOption("help") ) {
+				HelpFormatter formatter = new HelpFormatter();
+				formatter.printHelp(DDNSService.class.getName(), options );
+				return;
+			}
+			if ( line.hasOption("configfile") ) configFilename = line.getOptionValue("configfile");
+
+			OS.boot(configFilename);
+
+			DDNSResolverService resolver = (DDNSResolverService)OS.getService("ddnsresolver");
+			Log.e(TAG, resolver.toString());
+
+			// Resolve a host
+			DDNSRRecord testAddress = resolver.resolve(OS.hostname());
+			Log.e(TAG, testAddress.toString());
+
+			testAddress = resolver.resolve(OS.hostname());
+			Log.e(TAG, testAddress.toString());
+			
+			testAddress = resolver.resolve("");
+			Log.e(TAG, testAddress.toString());
+
+			testAddress = resolver.resolve(new DDNSFullName(OS.hostname()).parent().toString());
+			Log.e(TAG, testAddress.toString());
+
+			testAddress = resolver.resolve("foo.jz.cse461");
+			Log.e(TAG, testAddress.toString());
+
+			testAddress = resolver.resolve("foo.cse461");
+			Log.e(TAG, testAddress.toString());
+
+		} catch (Exception e) {
+			Log.e(TAG, "DDNSAgent caught exception: " + e.getMessage());
+		}
+	}
+}

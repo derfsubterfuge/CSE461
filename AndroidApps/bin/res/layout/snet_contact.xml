@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent" >
+
+    <Spinner
+        android:id="@+id/memberspinner"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_alignParentTop="true"
+        android:layout_centerHorizontal="true"
+        android:layout_marginTop="47dp" />
+
+    <Button
+        android:id="@+id/friendbutton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_alignParentLeft="true"
+        android:layout_below="@+id/memberspinner"
+        android:layout_marginLeft="14dp"
+        android:layout_marginTop="42dp"
+		android:onClick="onFriend"
+        android:text="@string/snet_friend" />
+
+    <Button
+        android:id="@+id/unfriendbutton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_alignBaseline="@+id/friendbutton"
+        android:layout_alignBottom="@+id/friendbutton"
+        android:layout_marginLeft="16dp"
+        android:layout_toRightOf="@+id/memberspinner"
+		android:onClick="onUnfriend"
+        android:text="@string/snet_unfriend" />
+
+    <Button
+        android:id="@+id/contactbutton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_alignBaseline="@+id/friendbutton"
+        android:layout_alignBottom="@+id/friendbutton"
+        android:layout_centerHorizontal="true"
+		android:onClick="onContact"
+        android:text="@string/snet_contact" />
+
+    <Button
+        android:id="@+id/fixdbbutton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_below="@+id/contactbutton"
+        android:layout_centerHorizontal="true"
+        android:layout_marginTop="52dp"
+		android:onClick="onFixDB"
+        android:text="@string/snet_fixdb" />
+
+</RelativeLayout>

@@ -1,0 +1,234 @@
+package edu.uw.cs.cse461.sp12.OS;
+
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import edu.uw.cs.cse461.sp12.OS.DDNSException.DDNSRuntimeException;
+
+
+/**
+ * Utility class representing a single entry in the ddns cache.
+ * <p>
+ * Fields:
+ * <ul>
+ * <li>tag - A string annotation (usually "host:type", but can be arbitrary)
+ * <li>type - Primarily used to indicate "no record found," or else whether it was a host lookup or an app lookup
+ * <li>ip - The resolved ip, or null if none found.  (Note: The "ip" can be an Internet DNS name.  Java allows both where it allows either.)
+ * <li>port - The value field of the record.  When an app lookup is performed, it's the port.  When a host lookup is done, it's null.
+ * <li>authoritative - If true, indicates that entry will never be expired from the cache
+ * </ul>
+ * @author zahorjan
+ *
+ */
+public class DDNSRRecord {		
+	protected RRType mType;  
+	protected boolean mAuthoritative;
+	protected long mTTL;
+
+	public static enum RRType {
+		RRTYPE_EMPTY(0, "EMPTY"),
+		RRTYPE_A(1, "A"),
+		RRTYPE_NS(2, "NS"),
+		RRTYPE_SOA(3, "SOA"),
+		RRTYPE_CNAME(4, "CNAME");
+		
+		private final String mString;
+		private final int mInt;
+		
+		RRType(int i, String s) {
+			mInt = i;
+			mString = s;
+		}
+		
+		@Override
+		public String toString() { return mString;}
+		public int toInt() { return mInt; }
+	};
+	
+	/**
+	 * Demarshall routine.
+	 * @param obj JSON description of record
+	 * @return
+	 * @throws Exception
+	 */
+	static DDNSRRecord jsonObjectToRRecord(JSONObject obj) throws DDNSException, JSONException {
+		String type = obj.getString("type");
+		if ( type.equals("A") ) return new ARecord(obj);
+		if ( type.equals("NS") ) return new NSRecord(obj);
+		if ( type.equals("SOA") ) return new SOARecord(obj);
+		if ( type.equals("CNAME") ) return new CNAMERecord(obj);
+		throw new DDNSRuntimeException("Invalid JSONObject representation of a RRecord: " + obj);
+	}
+	
+	
+	
+	protected DDNSRRecord() {
+		mType = RRType.RRTYPE_EMPTY;
+		mAuthoritative = false;
+		mTTL = 0;
+	}
+	
+	protected DDNSRRecord(JSONObject obj) throws JSONException {
+		mAuthoritative = obj.getInt("authoritative") != 0;
+		mTTL = obj.getInt("ttl");
+	}
+	
+	protected JSONObject toJSONObject() throws JSONException {
+		return new JSONObject().put("type", type().toString())
+							   .put("ttl", mTTL-OS.now())
+							   .put("authoritative", mAuthoritative);
+	}
+	
+	public String toString(String prefix) {
+		StringBuilder sb = new StringBuilder();
+		return _toString(sb, prefix).toString();
+	}
+	
+	protected StringBuilder _toString(StringBuilder sb, String prefix) {
+		sb.append("Type: ").append(mType.toString())
+						 .append(" Auth: ").append(mAuthoritative?"1":"0")
+						 .append(" TTL: ").append(mTTL);
+		return sb;
+	}
+	
+	public RRType type() { return mType; }
+	public boolean authoritative() { return mAuthoritative; }
+	DDNSRRecord setAuthoritative(boolean b) { mAuthoritative = b; return this; }
+	public long ttl() { return mTTL; }
+	void setTTL(long ttl) { mTTL = ttl; }
+	
+	//-------------------------------------------------------------------
+	// A record
+	//-------------------------------------------------------------------
+	
+	public static class ARecord extends DDNSRRecord {
+		protected String mIP;
+		protected int mPort;
+
+		public ARecord(String ip, int port) {
+			mType = RRType.RRTYPE_A;
+			mIP = ip;
+			mPort = port;
+		}
+		
+		protected ARecord(JSONObject obj) throws JSONException {
+			super(obj);
+			mType = RRType.RRTYPE_A;
+			mIP = obj.getString("ip");
+			mPort = obj.getInt("port");
+		}
+
+		@Override
+		protected JSONObject toJSONObject() throws JSONException {
+			return super.toJSONObject().put("ip", ip())
+								   	   .put("port", port());
+		}
+		
+		@Override
+		protected StringBuilder _toString(StringBuilder sb, String prefix) {
+			super._toString(sb,  prefix);
+			sb.append(prefix).append(" IP: ").append(mIP)
+			  				 .append(" Port: ").append(mPort)
+			  				 .append(" Neg: ").append(isNegative()?"true":"false");
+			return sb;
+		}
+		
+		public String ip() { return mIP; }
+		public int port() { return mPort; }
+		public boolean isNegative() { return mIP == null; }
+	}
+	
+	//-------------------------------------------------------------------
+	// NS record
+	//-------------------------------------------------------------------
+	
+	public static class NSRecord extends ARecord {
+
+		public NSRecord() {
+			super(null,-1);
+			mType = RRType.RRTYPE_NS;
+		}
+		
+		protected NSRecord(JSONObject obj) throws JSONException {
+			super(obj);
+			mType = RRType.RRTYPE_NS;
+		}
+		
+		@Override
+		protected JSONObject toJSONObject() throws JSONException {
+			return super.toJSONObject();
+		}
+		
+		@Override
+		protected StringBuilder _toString(StringBuilder sb, String prefix) {
+			return super._toString(sb,prefix);
+		}
+	}
+
+	//-------------------------------------------------------------------
+	// CNAME record
+	//-------------------------------------------------------------------
+	
+	public static class CNAMERecord extends DDNSRRecord {
+		protected DDNSFullName mAlias;
+		
+		public CNAMERecord(String alias) {
+			mType = RRType.RRTYPE_CNAME;
+			mAlias= new DDNSFullName(alias);
+		}
+		
+		public CNAMERecord(DDNSFullName alias) {
+			mType = RRType.RRTYPE_CNAME;
+			mAlias= alias;
+		}
+		
+		protected CNAMERecord(JSONObject obj) throws JSONException {
+			super(obj);
+			mType = RRType.RRTYPE_CNAME;
+			mAlias = new DDNSFullName(obj.getString("alias"));
+		}
+		
+		@Override
+		protected JSONObject toJSONObject() throws JSONException {
+			return super.toJSONObject().put("alias", alias());
+		}
+		
+		public DDNSFullName alias() {  return mAlias; }
+		
+		@Override
+		protected StringBuilder _toString(StringBuilder sb, String prefix) {
+			super._toString(sb,prefix).append(" Alias: ").append(mAlias);
+			return sb;
+		}
+	}
+
+	//-------------------------------------------------------------------
+	// SOA record
+	//-------------------------------------------------------------------
+	
+	public static class SOARecord extends ARecord {
+		protected DDNSFullName mParentServerName;
+		protected String mParentPassword;
+		
+		public SOARecord(String ip, int port, DDNSFullName parentServer, String parentPassword) {
+			super(ip, port);
+			mType = RRType.RRTYPE_SOA;
+			mParentServerName = parentServer;
+			mParentPassword = parentPassword;
+		}
+		
+		protected SOARecord(JSONObject obj) throws JSONException {
+			super(obj);
+			mType = RRType.RRTYPE_SOA;
+			mParentPassword = null;
+		}
+		
+		@Override
+		protected StringBuilder _toString(StringBuilder sb, String prefix) {
+			return super._toString(sb,prefix);
+		}
+		
+		String password() { return mParentPassword; }
+	}
+	
+}

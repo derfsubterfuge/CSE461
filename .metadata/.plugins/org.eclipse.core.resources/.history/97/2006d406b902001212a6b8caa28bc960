@@ -1,0 +1,40 @@
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/AndroidAppManagerLayout"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent" >
+
+    <TextView
+        android:id="@+id/appmanager_myiptext"
+        android:layout_width="250px"
+        android:layout_height="wrap_content"
+        android:layout_alignParentLeft="true"
+        android:layout_alignParentTop="true"
+        android:layout_marginLeft="10px"
+        android:layout_marginTop="16dp"
+        android:text="TextView"
+        android:textSize="12sp" />
+
+    <LinearLayout
+        android:id="@+id/appmanagerlayout"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_alignParentLeft="true" >
+    </LinearLayout>
+
+    <EditText
+        android:id="@+id/editText1"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_alignParentLeft="true"
+        android:layout_below="@+id/myiptext"
+        android:layout_marginTop="22dp"
+        android:ems="10"
+        android:textSize="12sp"
+        android:inputType="textMultiLine"
+        android:text="@string/androidappmanagerPrompt" >
+
+        <requestFocus />
+    </EditText>
+
+</RelativeLayout>

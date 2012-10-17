@@ -1,0 +1,91 @@
+
+
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import android.util.Log;
+import edu.uw.cs.cse461.sp12.OS.DDNSService;
+import edu.uw.cs.cse461.sp12.OS.DDNSService.AddressType;
+import edu.uw.cs.cse461.sp12.OS.DDNSService.FullName;
+import edu.uw.cs.cse461.sp12.OS.OS;
+import edu.uw.cs.cse461.sp12.OS.RPCCallable;
+import edu.uw.cs.cse461.sp12.OS.RPCCallerSocket;
+import edu.uw.cs.cse461.sp12.OS.RPCService;
+import edu.uw.cs.cse461.sp12.OSConsoleApps.AppManager.OSConsoleApp;
+
+public class EchoConsole extends RPCCallable implements OSConsoleApp {
+	private static final String TAG="EchoConsole";
+	
+	// RPC callable method proxy definition
+	public abstract class EchoCallableMethod extends RPCCallableMethod {
+		EchoConsole echoConsole;
+		EchoCallableMethod(EchoConsole e) { echoConsole = e; }
+		public abstract JSONObject handleCall(JSONObject args) throws Exception;
+	}
+	private EchoCallableMethod echo;
+	
+	@Override
+	public String servicename() {
+		return "echo";
+	}
+	
+	public EchoConsole() throws Exception {
+		System.out.println("EchoConsole");
+		// register RPC call handler
+		echo = new EchoCallableMethod(this){ public JSONObject handleCall(JSONObject args) throws Exception { return echoConsole._echo(args); }	};	
+		((RPCService)OS.getService("rpc")).registerHandler("echo", this, echo );
+	}
+	
+	public void run() {
+		try {
+			// Eclipse doesn't support System.console()
+			BufferedReader console = new BufferedReader(new InputStreamReader(System.in));
+			System.out.println("Enter lines like <target> <msg> to have <msg> echoed back");
+			while ( true ) {
+				try {
+					System.out.print("Enter a host name, or exit to exit: ");
+					String target = console.readLine();
+					if ( target == null ) target = "";
+					else if ( target.equals("exit")) break;
+					DDNSService.AddressRecord targetAddr = ((DDNSService)OS.getService("ddns")).resolve(target);
+					Log.v(TAG, "Got address:\n" + targetAddr.toString());
+
+					// If name was resolved, record type should be RPC.  If it isn't, can't contact target, at least at the moment. 
+					if ( targetAddr.type != AddressType.RPC ) continue;
+
+					System.out.print("Enter message to echoed: ");
+					String msg = console.readLine();
+					RPCCallerSocket socket = new RPCCallerSocket(new FullName(target), targetAddr.ip, targetAddr.port);
+					JSONObject response = socket.invoke(servicename(), "echo", new JSONObject().put("msg", msg) );
+					System.out.println(response.getString("msg"));
+				} catch (Exception e) {
+					System.out.println("Exception: " + e.getMessage());
+				}
+			}
+		} catch (Exception e) {
+			Log.e(TAG, "EchoConsole.run() caught exception: " +e.getMessage());
+		}
+	}
+	
+	public void shutdown() {
+		// nothing to do, but have to implement to fulfill the interface promise
+	}
+	
+	/**
+	 * The RPCCalleeObject required method.  Responds to RPC invocations.
+	 * 
+	 * @param args  Must contain a 'msg' element, of type String.
+	 * @return  'msg' element, echoing the received value.
+	 * @throws JSONException
+	 */
+	private JSONObject _echo(JSONObject args) throws JSONException {
+		// We can't assume the underlying implementation won't modify args in some way that is
+		// incompatible with return value, so have to make a copy.
+		JSONObject result = new JSONObject().put("msg", args.getString("msg"));
+		return result;
+	}
+
+}

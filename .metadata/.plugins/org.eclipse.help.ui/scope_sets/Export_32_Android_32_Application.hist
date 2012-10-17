@@ -1,0 +1,5 @@
+#Fri May 18 12:18:58 PDT 2012
+__DEFAULT__=false
+org.eclipse.sdk.Eclipse.master=true
+org.eclipse.help.ui.localSearch.master=true
+expression=Export Android Application

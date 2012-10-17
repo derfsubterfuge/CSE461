@@ -1,0 +1,32 @@
+package edu.uw.cs.cse461.sp12.OS;
+
+import java.io.IOException;
+import java.util.Properties;
+
+import edu.uw.cs.cse461.sp12.OS.NameManagerBase.RecordSet;
+import edu.uw.cs.cse461.sp12.util.NanoHTTPD;
+
+public class DDNSServiceHTTPD extends NanoHTTPD {
+	
+	public DDNSServiceHTTPD( int port ) throws IOException {
+		super(port, null); // don't want to serve files, ever (?)
+	}
+
+	@Override
+	public Response serve( String uri, String method, Properties header, Properties parms, Properties files ) {
+		try {
+			NameManager manager = new NameManager();
+			
+			StringBuilder sb = new StringBuilder("<html><body><pre>");
+			sb.append(mManager.toString());
+			sb.append("</pre></body></html>");
+			
+			return new Response( HTTP_OK, MIME_HTML, sb.toString() );
+			
+		} catch (Exception e) {
+			return new Response( HTTP_INTERNALERROR, MIME_HTML, HTTP_INTERNALERROR + "<p><pre>" + e.getMessage() + "</pre>");
+		}
+	}
+
+
+}

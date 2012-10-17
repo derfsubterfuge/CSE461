@@ -1,0 +1,5 @@
+package edu.uw.cs.cse461.OS;
+
+public interface OSPropertiesInterface {
+
+}

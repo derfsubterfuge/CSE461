@@ -1,0 +1,24 @@
+package edu.uw.cs.cse461.OS;
+
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import edu.uw.cs.cse461.util.Log;
+
+public class OSAndroidStart extends BroadcastReceiver {
+	public static final String TAG="OSAndroidStart";
+	
+	@Override
+	public void onReceive(Context context, Intent intent) {
+		if ( intent.getAction().equals(Intent.ACTION_BOOT_COMPLETED )) {
+			Intent startOSServiceIntent = new Intent(context, OSAndroidService.class);
+			context.startService(startOSServiceIntent);
+			
+			Log.e(TAG, "OS hostname = '" + OS.theOS().hostname() + "'");
+		}
+		else if ( intent.getAction().equals(Intent.ACTION_SHUTDOWN)) {
+			//TODO: trigger OS.shutdown
+		}
+	}
+
+}

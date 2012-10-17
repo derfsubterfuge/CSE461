@@ -1,0 +1,119 @@
+package edu.uw.cs.cse461.sp12.timingframing;
+
+import java.io.IOException;
+
+import android.app.Activity;
+import android.content.SharedPreferences;
+import android.os.Bundle;
+import android.util.Log;
+import android.view.View;
+import android.widget.TextView;
+import android.widget.Toast;
+import android.widget.ToggleButton;
+
+public class TimingFramingAndroidActivity extends Activity implements Client.ClientListener {
+	public static final String TAG = "TimingFramingAndroidActivity";
+    public static final String PREFS_NAME = "Game481m12sp";
+
+    private Client mClient;
+    private Thread mClientThread;
+	private String mServerHost;
+	private int mServerPort;
+	private int mServerInterSymbolTime;
+	private int mServerResyncInterval;
+	
+	private TextView mSyncTextView;
+	private TextView mAsyncTextView;
+	
+	/** Called when the activity is first created. */
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.main);
+        
+        SharedPreferences settings = getSharedPreferences(PREFS_NAME,0);
+        mServerHost = settings.getString("serverhost", "rocketship.cs.washington.edu");
+        mServerPort = settings.getInt("serverport", 46101);
+        mServerInterSymbolTime = settings.getInt("serverintersymboltime", 10); // msec.
+        mServerResyncInterval = settings.getInt("serverresyncinterval", -1);
+        
+        // TEMPORARY WHILE POWER OUT AT UW -- DEBUG
+        mServerHost = "192.168.0.105";
+        
+        mClient = new Client();
+        mClient.addListener(this);
+        
+        mSyncTextView = (TextView)findViewById(R.id.syncedText);
+        mAsyncTextView = (TextView)findViewById(R.id.asyncText);
+    }
+
+    /**
+     * Called when activity is stopped.  Save user prefs for next execution.
+     */
+    protected void onStop() {
+    	super.onStop();
+    	
+    	SharedPreferences settings = getSharedPreferences(PREFS_NAME, 0);
+    	SharedPreferences.Editor editor = settings.edit();
+    	editor.putString("serverhost", mServerHost);
+    	editor.putInt("serverport", mServerPort);
+    	editor.putInt("serverintersymboltime", mServerInterSymbolTime);
+    	editor.putInt("serverresyncinterval", mServerResyncInterval);
+    	editor.commit();
+    }
+    
+    /**
+     * Start/stop toggle button handler.
+     */
+    public void onToggleClicked(View v) {
+    	if (((ToggleButton)v).isChecked()) {
+    		mClientThread = new Thread() {
+    			public void run() {
+    				try {
+    					mClient.connect(mServerHost, mServerPort, mServerInterSymbolTime, mServerResyncInterval);
+    				} catch (IOException e) {
+    					Toast toast = Toast.makeText(getApplicationContext(), "Can't connect to " + mServerHost + ":" + mServerPort, Toast.LENGTH_SHORT);
+    					toast.show();
+    				}
+    			}
+    		};
+    		mClientThread.start();
+    	} else {
+    		mClientThread.interrupt();
+    	}
+    }
+
+    /**
+     * Helper class to get onChar activity onto UI thread
+     */
+    private class OnCharClass implements Runnable {
+    	private static final int MAXCHARS = 25;
+    	int type;
+    	char c;
+    	public OnCharClass(int t, char ch) {
+    		type = t;
+    		c = ch;
+    	}
+		public void run() {
+			TextView textView;
+			Log.v(TAG, "Got char " + c + " of type " + type);
+			if ( type == Client.TYPE_SYNC ) textView = mSyncTextView;
+			else if ( type == Client.TYPE_ASYNC ) textView = mAsyncTextView;
+			else throw new RuntimeException("Unknown type in ConsoleClient.onChar: " + type);
+	
+			int textLength = textView.getText().length();
+			int start = textLength > MAXCHARS ? textLength-MAXCHARS : 0;
+			String text = textView.getText().toString().substring(start) + c;
+			textView.setText(text);
+		}
+    }
+    
+    /**
+     * Callback from Client object when a character is read, synchronously or asynchronously.
+     */
+	public void onChar(int type, char c) {
+		runOnUiThread( new OnCharClass(type, c) );
+		return true;
+	}
+    
+}

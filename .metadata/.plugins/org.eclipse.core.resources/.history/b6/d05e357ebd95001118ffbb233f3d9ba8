@@ -1,0 +1,351 @@
+package edu.uw.cs.cse461.sp12.OS;
+
+import java.net.UnknownHostException;
+import java.util.HashMap;
+import java.util.Timer;
+import java.util.TimerTask;
+
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import edu.uw.cs.cse461.sp12.OS.DDNSException.DDNSNoAddressException;
+import edu.uw.cs.cse461.sp12.OS.DDNSException.DDNSNoSuchNameException;
+import edu.uw.cs.cse461.sp12.OS.DDNSException.DDNSRuntimeException;
+import edu.uw.cs.cse461.sp12.OS.DDNSException.DDNSTTLExpiredException;
+import edu.uw.cs.cse461.sp12.OS.DDNSNode.DDNSCacheNode;
+import edu.uw.cs.cse461.sp12.OS.DDNSRRecord.ARecord;
+import edu.uw.cs.cse461.sp12.OS.DDNSRRecord.CNAMERecord;
+import edu.uw.cs.cse461.sp12.OS.DDNSRRecord.RRType;
+import edu.uw.cs.cse461.sp12.OS.DDNSRRecord.SOARecord;
+import edu.uw.cs.cse461.sp12.OS.DDNSServiceRPCStub.DDNSServiceRegisterStub;
+import edu.uw.cs.cse461.sp12.OS.DDNSServiceRPCStub.DDNSServiceResolveStub;
+import edu.uw.cs.cse461.sp12.OS.DDNSServiceRPCStub.DDNSServiceUnregisterStub;
+import edu.uw.cs.cse461.sp12.OS.HTTPDService.HTTPProvider;
+import edu.uw.cs.cse461.sp12.OS.OSLoadable.OSLoadableService;
+import edu.uw.cs.cse461.sp12.util.Log;
+
+public class DDNSResolverService implements OSLoadableService, HTTPProvider {
+	private static String TAG="DDNSResolverService";
+	
+	private static final int DEFAULTCACHETTL = 120;
+
+	private static final int DEFAULTPARENREFRESHINTERVAL = 600;
+	private static final int MINIMUMPARENTREFRESHINTERVAL = 60;
+	
+	private String mDDNSServicePassword;
+	private int mMaxServerTTL;  // maximum number of DDNS servers to visit for any one resolve request (or the like)
+	
+	private int mCacheHits = 0;
+	private int mCacheMisses = 0;
+
+	private Timer mTimer;    // to periodically register with parent
+	private long mCacheTTL;  // how long a cached node is kept in the cache, in seconds
+	
+	private HashMap<DDNSFullName, DDNSCacheNode> mCache;
+	private DDNSCacheNode mRootServerNode;
+	
+	@Override
+	public String loadablename() {
+		return "ddnsresolver";
+	}
+	
+	/**
+	 * Called to end execution.  Specifically, need to terminate any threads we've created.
+	 */
+	@Override
+	public void shutdown() {
+		if ( mTimer != null ) mTimer.cancel();
+		mTimer = null;
+		// if we're not the root, we need to unregister
+		if ( !new DDNSFullName(OS.hostname()).equals(DDNSFullName.ROOTNAME)) {
+			try {
+				unregister(new DDNSFullName(OS.hostname()));
+			} catch (Exception e) {
+				Log.w(TAG, "ADVISORY: Caught exception while unregistering with parent:\n" + e.getMessage());
+			}
+		}
+	}
+		
+	/**
+	 * Serves web pages.  The 0th element of uriArray is always null.
+	 * The next element names this service ("ddnsresolver").  The optional third
+	 * component is a name to be resolved before dumping the cache.
+	 */
+	@Override
+	public String httpServe(String[] uriArray) {
+		StringBuilder sb = new StringBuilder();
+		sb.append("Host:  ").append(OS.hostname()).append("\n");
+		if ( uriArray.length > 2 ) {
+			sb.append("Resolving: ").append(uriArray[2]).append("\n");
+			// third component
+			ARecord result = null;
+			try {
+				result = resolve(uriArray[2]);
+				sb.append("Got: [").append(result).append("]\n");
+			} catch (Exception e) {
+				sb.append("Got exception: ").append(e.getMessage()).append("\n");
+			}
+		}
+		sb.append("\nCache contents:\n");
+		_toString(sb, "");
+		return sb.toString();
+	}
+	
+	//-----------------------------------------------------------------------------
+	//-----------------------------------------------------------------------------
+	// Utility classes 
+	
+	public class CacheCleaner extends TimerTask {
+		DDNSFullName key;
+		CacheCleaner(DDNSFullName name) { key = name; }
+		public void run() { deleteNameFromCache(key); }
+	}
+	
+	// Utility classes 
+	//-----------------------------------------------------------------------------
+	//-----------------------------------------------------------------------------
+	
+	public DDNSResolverService() throws DDNSException {
+		mCache = new HashMap<DDNSFullName, DDNSCacheNode>();
+		mTimer = new Timer();
+		
+		//--------------------------------------------------------------
+		// See if I have a password
+		//--------------------------------------------------------------
+
+		mDDNSServicePassword = OS.config().getProperty("ddnsresolver.password");
+		if ( mDDNSServicePassword == null ) mDDNSServicePassword = "";  // try using no password
+		
+		//--------------------------------------------------------------
+		// establish resolution TTL
+		//--------------------------------------------------------------
+		
+		mMaxServerTTL = OS.config().getInt("ddnsresolver.maxserverttl", 5, 1, 100, TAG);
+		
+		//--------------------------------------------------------------
+		// remember the root host as an uncached cached node
+		//--------------------------------------------------------------
+
+		mRootServerNode= new DDNSCacheNode(DDNSFullName.ROOTNAME, new SOARecord(null, -1));
+		mRootServerNode.setIsNegative(true);
+		String rootHost = OS.config().getProperty("ddns.rootserver");
+		if ( rootHost == null ) Log.e(TAG, "DDNSAgent.DDNSAgent: no rootserver in config file");
+		else {
+			try {
+				int rootPort = OS.config().getInt("ddns.rootport");
+				mRootServerNode = new DDNSCacheNode(DDNSFullName.ROOTNAME, new SOARecord(rootHost, rootPort) );
+			} catch (NoSuchFieldException e) {
+				Log.e(TAG, "No ddns.rootport entry in config file");
+			}
+		}
+
+		//--------------------------------------------------------------
+		// fetch cachettl info
+		//		ddnsresolver.cachettl == 0 means don't cache.
+		//--------------------------------------------------------------
+
+		mCacheTTL = OS.config().getInt("ddnsresolver.cachettl", DEFAULTCACHETTL, 0, TAG);
+		Log.d(TAG, "Cache ttl = " + mCacheTTL + " seconds");
+		
+		//--------------------------------------------------------------
+		// Register with parent, unless we're the root
+		//--------------------------------------------------------------
+		
+		if ( !new DDNSFullName(OS.hostname()).equals(DDNSFullName.ROOTNAME)) _doRegisterWithParent();
+	}
+
+	private DDNSCacheNode addNodeToCache(DDNSCacheNode node) {
+		// don't cache if ttl==0, unless node isn't sticky
+		if ( mCacheTTL == 0 && !node.isSticky() ) return node;
+		synchronized(mCache) {
+			mCache.put(node.name(), node);
+		}
+		if ( mCacheTTL > 0 ) mTimer.schedule( new CacheCleaner(node.name()), (long)(mCacheTTL*1000) );
+		return node;
+	}
+	
+	private DDNSCacheNode readNodeFromCache(DDNSFullName name) {
+		synchronized(mCache) {
+			DDNSCacheNode node = mCache.get(name);
+			if ( node == null ) mCacheMisses++;
+			else mCacheHits++;
+			return node;
+		}
+	}
+	
+	private DDNSCacheNode deleteNameFromCache(DDNSFullName name) {
+		synchronized(mCache) {
+			DDNSCacheNode node = mCache.get(name);
+			mCache.remove(name);
+			return node;
+		}
+	}
+	
+	/**
+	 * Registers this host in the global ddns name tree.  ("This host" is the rpc service.)  Invoked periodically by update thread.
+	 */
+	private void _doRegisterWithParent() {
+		try {
+			RPCService rpcService = (RPCService)OS.getService("rpc"); 
+			int myPort = rpcService.localPort();
+			register(new DDNSFullName(OS.hostname()), myPort);
+			
+			xxx = register(xxx);
+			
+			mTimer.schedule(new TimerTask() {
+				public void run() {
+					_doRegisterWithParent();
+				}
+			},
+			0L, refreshInterval * 1000L );
+			
+		} catch (Exception e) {
+			Log.w(TAG, "ADVISORY: Caught exception while registering with parent:\n" + e.getMessage());
+			e.printStackTrace();
+		}
+	}
+	
+	/**
+	 * Unregisters a name.  
+	 * @param name
+	 * @throws DDNSException
+	 */
+	void unregister(DDNSFullName name) throws DDNSException, JSONException {
+		DDNSServiceUnregisterStub callStub = new DDNSServiceUnregisterStub(name, mDDNSServicePassword);
+		DDNSResultObject response = _serverIterate(callStub);
+		if ( !response.mDone ) throw new DDNSRuntimeException("unregister didn't return done==true, but didn't throw exception");
+		
+		// we need to keep advertising the address to the parent, so the parent doesn't clean it away
+	}
+	
+	/**
+	 * Registers a name as being on this host (IP) at the given port.
+	 * If the name already exists, update its address mapping.  If it doesn't exist, create it (as an ARecord).
+	 * @param name
+	 * @param ip
+	 * @param port
+	 * @throws DDNSException
+	 */
+	void register(DDNSFullName name, int port) throws DDNSException, JSONException {
+		
+		// figure out ip for registration
+		RPCService rpc = (RPCService)OS.getService("rpc");
+		if ( rpc == null ) throw new DDNSRuntimeException("No rpc service available.  Can't register '" + name + "'");
+		String ip;
+		try {
+			ip = rpc.localIP();
+		} catch (UnknownHostException e) {
+			throw new DDNSRuntimeException("register(" + name + ") caught UnknownHostException: " + e.getMessage());
+		}
+		
+
+		DDNSServiceRegisterStub callStub = new DDNSServiceRegisterStub(name, ip, port, mDDNSServicePassword);
+		DDNSResultObject response = _serverIterate(callStub);
+		if ( !response.mDone ) throw new DDNSRuntimeException("register didn't return done==true, but didn't throw exception");
+	}
+	
+	/**
+	 * Resolves a name to an ARecord containing an address.  Throws an exception if no ARecord w/ address can be found.
+	 * @param name
+	 * @return The ARecord for the name, if one is found
+	 * @throws DDNSException
+	 */
+	public ARecord resolve(String nameStr) throws DDNSException, JSONException {
+		// Responsibilties of this routine: Convert from DDNSCacheNode to ARecord
+		
+		DDNSServiceResolveStub callStub = new DDNSServiceResolveStub(new DDNSFullName(nameStr));
+		DDNSResultObject response = _serverIterate(callStub);
+		if ( !response.mDone ) throw new DDNSRuntimeException("register didn't return done==true, but didn't throw exception");
+
+		DDNSCacheNode resultNode = (DDNSCacheNode)response.mNode;
+		
+		// null shouldn't be possible, but some broken server might return void
+		if ( resultNode == null || resultNode.record() == null ) {
+			Log.e(TAG, "resolve(" + callStub.name() + ") got null record");
+			throw new DDNSRuntimeException("Got null response resolving name '" + callStub.name() + "'");
+		}
+		if ( resultNode.isNegative() ) throw new DDNSNoAddressException(callStub.name());
+		
+		ARecord aRecord = null;
+		try {
+			// if the record isn't an address record, the cast will cause an exception
+			aRecord = (ARecord)resultNode.record(); 
+		} catch (Exception e ) {
+			Log.e(TAG,"Got odd record from _resolveToNode(" + callStub.name() + "): " + resultNode.record().toString());
+			throw new DDNSNoAddressException(callStub.name());
+		}
+		return aRecord;
+	}
+	
+	private DDNSResultObject _serverIterate(DDNSServiceRPCStub callStub) throws DDNSException, JSONException {
+		
+		// set up in case we need to query a server
+		DDNSCacheNode ddnsServerNode = mRootServerNode;
+		
+		DDNSCacheNode node = null;
+		int serversRemaining = mMaxServerTTL;
+		while ( serversRemaining-- > 0) {
+			
+			node = callStub.useCachedNode();
+			if ( node != null ) {
+				if ( node.isNegative()) throw new DDNSNoAddressException(callStub.name());
+				if ( node.noSuchName() ) throw new DDNSNoSuchNameException(callStub.name());
+			}
+			else {
+				try {
+					DDNSResultObject response = callStub.call(ddnsServerNode); //_ddnsInvoke(resolveTTL, name, "resolve", args, ddnsServerNode);
+
+					// if a node was returned, cache it
+					node = (DDNSCacheNode)response.mNode;
+					if ( node != null ) {
+						node.setSticky(false);
+						addNodeToCache(node);
+					}
+
+					if ( response.mDone ) return response;
+					
+				} catch (DDNSNoSuchNameException nsne) {
+					addNodeToCache( new DDNSCacheNode(callStub.name(), new ARecord()).setNoSuchName(true) );
+					throw nsne;
+				} catch (DDNSNoAddressException nae) {
+					DDNSCacheNode newNode = new DDNSCacheNode(callStub.name(), new ARecord());
+					newNode.setIsNegative(true);
+					addNodeToCache( newNode );
+					throw nae;
+				}
+			}
+
+			RRType nodeType = node.record().type();
+			if ( nodeType == RRType.RRTYPE_NS ) ddnsServerNode = node;   // need to follow the link
+			else if ( nodeType == RRType.RRTYPE_CNAME ) {
+				DDNSFullName name = callStub.name();
+				Log.i(TAG, "CNAME pre: " + name);
+				DDNSFullName alias = ((CNAMERecord)node.record()).alias(); 
+				if ( name.toString().length() == node.name().toString().length() ) name = alias;
+				else name = new DDNSFullName( name.toString().substring(0, name.toString().length() - node.name().toString().length()) + alias );
+				callStub.setName(name);
+				ddnsServerNode = mRootServerNode;
+				Log.i(TAG, "CNAME post: " + name);
+			}
+			// nodeType == RRType.RRTYPE_A || nodeType == RRType.RRTYPE_SOA
+			else throw new DDNSRuntimeException("A or SOA node returned by DDNS service but done set to false");
+		}
+		throw new DDNSTTLExpiredException(callStub.name());
+	}
+
+	public String toString(String prefix) {
+		StringBuilder sb = new StringBuilder();
+		return _toString(sb, prefix).toString();
+	}
+	
+	public StringBuilder _toString(StringBuilder sb, String prefix) {
+		sb.append(mCacheMisses).append(" misses\n")
+		  .append(mCacheHits).append(" hits\n");
+		synchronized(mCache) {
+			for ( DDNSCacheNode node : mCache.values() ) {
+				node._toString(sb, prefix);
+			}
+		}
+		return sb;
+	}
+}

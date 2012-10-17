@@ -1,0 +1,129 @@
+package edu.uw.cs.cse461.OS.RPC;
+
+import java.io.IOException;
+import java.net.Socket;
+
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import edu.uw.cs.cse461.NetBase.OS;
+import edu.uw.cs.cse461.OS.RPC.RPCMessage.RPCCallMessage;
+import edu.uw.cs.cse461.OS.RPC.RPCMessage.RPCCallMessage.RPCControlMessage;
+import edu.uw.cs.cse461.OS.RPC.RPCMessage.RPCCallMessage.RPCInvokeMessage;
+import edu.uw.cs.cse461.OS.RPC.RPCMessage.RPCResponseMessage;
+import edu.uw.cs.cse461.OS.RPC.RPCMessage.RPCResponseMessage.RPCNormalResponseMessage;
+import edu.uw.cs.cse461.OS.TCPMessageHandler.TCPMessageHandler;
+import edu.uw.cs.cse461.util.Log;
+
+/**
+ * Implements a Socket to use in sending remote RPC invocations.  (It must engage
+ * in the RPC handshake before sending the invocation request.)
+ * @author zahorjan
+ *
+ */
+public class RPCCallerSocket extends Socket {
+	private static final String TAG = "RPCCallerSocket";
+	
+	private static final int DEFAULTTIMEOUT = 20; // 20 seconds
+	private static final int MINIMUMTIMEOUT = 1;
+	
+	private String mRemoteHost;
+	private TCPMessageHandler mMsgHandler = null;
+	
+	/**
+	 * Create a socket for sending RPC invocations, connecting it to the specified remote ip and port.
+	 * @param Remote host's name. In Project 3, it's not terribly meaningful - repeat the ip.
+	 *  In Project 4, it's intended to be the string name of the remote system, allowing a degree of sanity checking.
+	 * @param ip  Remote system IP address.
+	 * @param port Remote RPC service's port.
+	 * @throws IOException
+	 * @throws JSONException
+	 */
+	public RPCCallerSocket(String hostname, String ip, int port) throws IOException, JSONException {
+		super(ip, port);
+
+		mRemoteHost = hostname;
+		mMsgHandler = new TCPMessageHandler(this);
+		
+		Log.d(TAG, "Creating RPCCallerSocket(" + hostname + ", " + ip + ", " + port + ")");
+		
+		// make sure the timeout value in the config file is well-formed
+		int rpcTimeout = OS.theOS().config().getInt("rpc.timeout", DEFAULTTIMEOUT, MINIMUMTIMEOUT, TAG);
+		rpcTimeout *= 1000;  // convert to msec.
+		this.setSoTimeout(rpcTimeout);
+		
+		// if response is any kind of error, an exception will be thrown
+		JSONObject response = controlAction("connect", null);
+		// there are no args expected in response, so we're done
+		Log.d(TAG, "Connected successfully");
+	}
+	
+	/**
+	 * Close this socket.
+	 */
+	@Override
+	synchronized public void close() throws IOException {
+		super.close();  // can a socket be closed twice?
+		if ( mMsgHandler != null ) mMsgHandler.discard();
+		mMsgHandler = null;
+	}
+	
+	/**
+	 * Returns the name of the remote host to which this socket is connected (as specified in the constructor call).
+	 */
+	public String remotehost() {
+		return mRemoteHost;
+	}
+
+	/**
+	 * Causes a remote call to the service/method names by the arguments.
+	 * @param service Name of the remote service (or application)
+	 * @param method Method of that service to invoke
+	 * @param userRequest Call arguments
+	 * @return
+	 * @throws JSONException
+	 * @throws IOException
+	 */
+	public JSONObject invoke(String service, String method, JSONObject userRequest) throws JSONException, IOException {
+		try {
+			RPCInvokeMessage invokeMessage = new RPCInvokeMessage(service, method, userRequest);
+			return _sendMessage(invokeMessage);
+		}
+		finally {
+			close();
+		}
+	}
+	
+	private JSONObject controlAction(String action, JSONObject args) throws JSONException, IOException {
+		RPCControlMessage controlMessage = new RPCControlMessage(action, args);
+		return _sendMessage(controlMessage);
+	}
+	
+	/**
+	 * Sends an arbitrary RPCCallMessage, waits for response, and throws an error if the response
+	 * is an error response.
+	 * @param request
+	 * @return The returned JSONObject value
+	 * @throws IOException
+	 */
+	private JSONObject _sendMessage(RPCCallMessage request) throws JSONException, IOException {
+		String responseString = null;
+		RPCResponseMessage responseMessage;
+		try {
+			Log.i(TAG, "[" + mRemoteHost + "]_sendMessage(" + request.toString() + ")");
+			mMsgHandler.sendMessage(request.marshall());
+			responseString = mMsgHandler.readMessageAsString();
+			Log.i(TAG, "\tresponse string: " + responseString);
+			responseMessage = (RPCResponseMessage)RPCMessage.unmarshall(responseString);
+			if ( !responseMessage.type().equals("OK") ) throw new IOException("Got error response");
+			if ( responseMessage.callid() != request.id() ) throw new IOException("Response message callid (" + responseMessage.callid() +
+																					") != call message id (" + request.id() + ")" );
+		} catch (Exception e) {
+			if ( responseString != null )
+				throw new IOException("Response to sent request:\n" +  request.marshall() + " \nis:\n" + responseString + "\nError message: " + e.getMessage());	 
+			throw new IOException("Error processing request " + request.marshall() + ": " + e.getMessage());
+		}
+		return ((RPCNormalResponseMessage)responseMessage).value();
+	}
+	
+}

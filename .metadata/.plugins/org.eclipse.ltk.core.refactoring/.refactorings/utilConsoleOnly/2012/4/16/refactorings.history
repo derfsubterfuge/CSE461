@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<session version="1.0">
+<refactoring comment="Rename type &apos;edu.uw.cs.cse461.sp12.OS.NameManager_DB&apos; to &apos;NameManager&apos;&#x0A;- Original project: &apos;utilConsoleOnly&apos;&#x0A;- Original element: &apos;edu.uw.cs.cse461.sp12.OS.NameManager_DB&apos;&#x0A;- Renamed element: &apos;edu.uw.cs.cse461.sp12.OS.NameManager&apos;&#x0A;- Update references to refactored element&#x0A;- Update textual occurrences in comments and strings" description="Rename type &apos;NameManager_DB&apos;" flags="589830" id="org.eclipse.jdt.ui.rename.type" input="/src&lt;edu.uw.cs.cse461.sp12.OS{NameManager_DB.java[NameManager_DB" matchStrategy="1" name="NameManager" qualified="false" references="true" similarDeclarations="false" stamp="1334858797249" textual="false" version="1.0"/>
+</session>

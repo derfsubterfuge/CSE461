@@ -1,0 +1,17 @@
+1347165289268	Rename type 'DDNSResolverInterface'
+1347213258764	Delete element
+1347258658434	Copy compilation unit
+1347261225408	Rename type 'NetLoadableApp'
+1347521539197	Rename type 'EchoService'
+1347521652717	Rename type 'EchoRaw'
+1347653543991	Copy compilation unit
+1347653557923	Rename type 'CopyOfEchoRawService'
+1347654540374	Rename local variable 'dgramPort'
+1347654550429	Rename local variable 'serverPort'
+1347694140338	Copy compilation unit
+1347694163674	Rename type 'EchoRawService'
+1347739799798	Delete element
+1347747209083	Rename type 'NetLoadableInterface'
+1347749128752	Copy compilation unit
+1347750763306	Copy compilation unit
+1347750862270	Rename compilation unit 'CopyOfNetLoadable.java'

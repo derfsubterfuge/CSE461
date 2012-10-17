@@ -1,0 +1,162 @@
+package edu.uw.cs.cse461.sp12.OS;
+
+import java.util.HashMap;
+import java.util.LinkedList;
+
+import edu.uw.cs.cse461.sp12.OS.DDNSNameStructure.DDNSNode;
+import edu.uw.cs.cse461.sp12.OS.DDNSService.DDNSException;
+import edu.uw.cs.cse461.sp12.OS.DDNSService.FullName;
+import edu.uw.cs.cse461.sp12.OS.RRecord.RRType;
+
+/**
+ * A DDNSNameStructure contains:
+ * <ul>
+ * <li>A tree of DDNSNodes.  These are names within in the zone.
+ * <li>A cache of all names this server has seen, implemented as a HashMap
+ * </ul>
+ * @author zahorjan
+ *
+ */
+class DDNSNameStructure {
+	private DDNSTree mNameTree;
+	private DDNSCache mNameCache;
+	
+	class DDNSTree {
+		private DDNSNode mRoot;
+		public DDNSTree() {
+			mRoot = null;
+		}
+		public DDNSNode addNode(DDNSNode node) throws DDNSException {
+			if ( mRoot == null ) {
+				mRoot = node;
+				return mRoot;
+			}
+			
+			DDNSNode attachNode = _findLast(node.name());
+			if ( attachNode.name().equals(node.name()) ) throw new DDNSException("addNode: Node " + node.name() + " already exists");
+			
+			return node;
+		}
+		
+		public DDNSNode find(FullName name) {
+			
+		}
+
+		/**
+		 * Resolve name as far as possible, and return node you end up on.
+		 * @param name
+		 * @return
+		 */
+		private DDNSNode _findLast(FullName fullname) throws DDNSException {
+			String name = fullname.toString();
+			String suffix = mRoot.name().toString();
+			if ( !name.endsWith(suffix) ) throw new DDNSException("Node " + name + " isn't in this zone [" + suffix + "]");
+			
+			name = name.substring(0, name.length() - suffix.length() );
+			String[] token = name.split("\\.");
+			int index;
+			DDNSNode attachNode = mRoot;
+			DDNSNode nextNode;
+			for ( index = token.length-1; index >= 0; attachNode = nextNode, index-- ) {
+				nextNode = attachNode.child(new FullName(token[index] + "." + attachNode.name()));
+				if ( nextNode == null ) break;
+			}
+			return attachNode;
+		}
+	}
+
+	static class DDNSNode {
+		private FullName mName;
+		private HashMap<FullName, DDNSNode> mChildren;
+		private RRecordList mRecordList;
+		
+		public class RRecordList { 
+			private LinkedList<RRecord> mRecordList;
+
+			public RRecordList() { mRecordList = new LinkedList<RRecord>(); }
+			public RRecord findRecord(RRType type) {
+				for ( RRecord r : mRecordList ) {
+					if ( r.type() == type ) return r;
+				}
+				return null;
+			}
+
+			public void add(RRecord r) { mRecordList.add(r); }
+			public RRecord remove(RRType type) { 
+				for (RRecord r : mRecordList ) {
+					if ( r.type() == type ) return r;
+				}
+				return null;
+			}
+			public String toString(String prefix) {
+				StringBuilder sb = new StringBuilder();
+				for ( RRecord r : mRecordList ) {
+					sb.append(prefix).append(r.toString()).append("\n");
+				}
+				return sb.toString();
+			}
+		}
+
+		public DDNSNode(FullName name) {
+			mName = name;
+			mChildren = new HashMap<FullName,DDNSNode>();
+		}
+
+		FullName name() { return mName; }
+		RRecordList records() { return mRecordList; }
+		DDNSNode findChild(String name) { return mChildren.get(name); }
+
+		// only one record of each type is allowed in the list
+		//TODO: is that enough?  CNAME + A?
+		RRecord addRecord(RRecord r) {
+			RRecord oldRecord = mRecordList.remove(r.type());
+			mRecordList.add(r);
+			return oldRecord;
+		}
+
+		public DDNSNode child(FullName name) {
+			return mChildren.get(name);
+		}
+
+		public DDNSNode addChild(DDNSNode node) {
+			mChildren.put(node.name(), node);
+			return node;
+		}
+		
+		private void _toString(StringBuilder sb, String prefix) {
+			sb.append(prefix).append(name());
+			prefix += "\t";
+			sb.append(prefix).append(records().toString(prefix)).append("\n");
+			for ( FullName childName : mChildren.keySet() ) {
+				sb.append(prefix).append(mChildren.get(childName).toString(prefix)).append("\n");
+			}
+		}
+
+		String toString(String prefix) {
+			StringBuilder sb = new StringBuilder();
+			_toString(sb, prefix);
+			return sb.toString();
+		}
+	}
+	
+	public class DDNSCache extends HashMap<FullName, DDNSNode> {
+		HashMap<FullName, DDNSNode> mCache;
+		public DDNSCache() {
+			mCache = new HashMap<FullName, DDNSNode>();
+		}
+		
+		public DDNSNode addNode(DDNSNode node) {
+			mCache.put(node.name(), node);
+			return node;
+		}
+	}
+	
+	public DDNSNameStructure() {
+		mNameTree = new DDNSTree();
+		mNameCache = new DDNSCache();
+	}
+	
+	public DDNSTree tree() { return mNameTree; }
+	public DDNSCache cache() { return mNameCache; }
+
+}

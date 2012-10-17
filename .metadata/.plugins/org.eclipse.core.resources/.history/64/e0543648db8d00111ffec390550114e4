@@ -1,0 +1,60 @@
+package edu.uw.cs.cse461.sp12.OSConsoleApps.DDNS;
+
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+
+import org.json.JSONObject;
+
+import edu.uw.cs.cse461.sp12.OS.DDNSService;
+import edu.uw.cs.cse461.sp12.OS.OS;
+import edu.uw.cs.cse461.sp12.OS.RPCCallerSocket;
+import edu.uw.cs.cse461.sp12.OS.RRecord;
+import edu.uw.cs.cse461.sp12.OSConsoleApps.OSConsoleApp;
+
+public class Echo implements OSConsoleApp {
+
+	public Echo() {
+	}
+	
+	/**
+	 * appname() must return a unique string.  There is already an "echo" - the one that uses only RPC.
+	 * @return
+	 */
+	public String appname() {
+		return "echoddns";
+	}
+	
+	public void run() {
+		try {
+			// Eclipse doesn't support System.console()
+			BufferedReader console = new BufferedReader(new InputStreamReader(System.in));
+			System.out.println("Enter lines like <target> <msg> to have <msg> echoed back");
+			while ( true ) {
+				try {
+					System.out.print("Enter a host name, or exit to exit: ");
+					String target = console.readLine();
+					if ( target == null ) target = "";
+					else if ( target.equals("exit")) break;
+					RRecord targetAddr = ((DDNSService)OS.getService("ddns")).resolve(target);
+
+					// If name was resolved, record type should be RPC.  If it isn't, can't contact target, at least at the moment. 
+					if ( targetAddr.type() != RRecord.RRType.RRTYPE_A ) continue;
+
+					System.out.print("Enter message to echoed: ");
+					String msg = console.readLine();
+					RPCCallerSocket socket = new RPCCallerSocket(target, targetAddr.ip(), targetAddr.port());
+					JSONObject response = socket.invoke("echo", "echo", new JSONObject().put("msg", msg) );
+					System.out.println(response.getString("msg"));
+				} catch (Exception e) {
+					System.out.println("Exception: " + e.getMessage());
+				}
+			}
+		} catch (Exception e) {
+			System.out.println("EchoConsole.run() caught exception: " +e.getMessage());
+		}
+	}
+	
+	public void shutdown() {
+	}
+	
+}

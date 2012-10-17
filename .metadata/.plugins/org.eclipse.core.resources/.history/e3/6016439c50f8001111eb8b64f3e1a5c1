@@ -1,0 +1,57 @@
+package edu.uw.cs.cse461.OS;
+
+import java.io.FileInputStream;
+
+import org.apache.commons.cli.CommandLine;
+import org.apache.commons.cli.CommandLineParser;
+import org.apache.commons.cli.HelpFormatter;
+import org.apache.commons.cli.Options;
+import org.apache.commons.cli.PosixParser;
+
+import edu.uw.cs.cse461.NetBase.OS;
+import edu.uw.cs.cse461.NetBase.OSInterface;
+import edu.uw.cs.cse461.util.Log;
+
+/**
+ * This class implements OS startup for the Console environment.
+ * Execution in the Console environment begins in main() of this class.
+ * @author zahorjan
+ *
+ */
+public abstract class OSConsoleStart implements OSInterface {
+
+	/**
+	 * A simple driver that fires up the OS by calling its boot() method.
+	 * We need to pass boot() a FileInputStream, connected to the config file to use,
+	 * because of restrictions of the Android implementation.
+	 * @param args
+	 */
+	public static void main(String[] args) {
+		final String TAG="OS.main";
+		String configFilename = "config.ini";  // default: may not exist
+		try {
+			// This code deals with command line options
+			Options options = new Options();
+			options.addOption("f", "configfile", true, "Config file name (Default: " + configFilename + ")");
+			options.addOption("h", "help", false, "Print this message");
+
+			CommandLineParser parser = new PosixParser();
+
+			CommandLine line = parser.parse(options, args);
+			if ( line.hasOption("help") ) {
+				HelpFormatter formatter = new HelpFormatter();
+				formatter.printHelp(OS.class.getName(), options );
+				return;
+			}
+			if ( line.hasOption("configfile") ) configFilename = line.getOptionValue("configfile");
+			Log.w(TAG, "Config filename = " + configFilename);
+
+			
+			OS.theOS().boot(new FileInputStream(configFilename));
+			
+		} catch (Exception e) {
+			Log.e(TAG, "Caught exception: " + e.getMessage());
+		}
+	}
+	
+}

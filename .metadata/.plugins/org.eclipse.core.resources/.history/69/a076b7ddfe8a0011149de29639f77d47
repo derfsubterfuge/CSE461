@@ -1,0 +1,14 @@
+package edu.uw.cs.cse461.sp12.OS;
+
+import java.net.InetAddress;
+import java.net.UnknownHostException;
+
+public class IPFinder {
+	public static String getMyIP() {
+		try {
+			return InetAddress.getLocalHost().getHostAddress();
+		} catch (UnknownHostException e) {
+			return "Unknown-host";
+		}
+	}
+}

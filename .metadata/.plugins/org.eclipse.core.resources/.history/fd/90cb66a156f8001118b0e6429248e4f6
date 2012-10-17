@@ -1,0 +1,167 @@
+package edu.uw.cs.cse461.OSConsoleApps;
+
+import java.io.File;
+import java.util.Scanner;
+
+import org.json.JSONObject;
+
+import edu.uw.cs.cse461.DB461.DB461.DB461Exception;
+import edu.uw.cs.cse461.NetBase.HTTPDService.HTTPProvider;
+import edu.uw.cs.cse461.NetBase.NetLoadableInterface.NetLoadableApp;
+import edu.uw.cs.cse461.OS.DDNS.DDNSFullName;
+import edu.uw.cs.cse461.OS.RPC.RPCCallableMethod;
+import edu.uw.cs.cse461.OS.RPC.RPCService;
+import edu.uw.cs.cse461.SNet.SNetController;
+import edu.uw.cs.cse461.SNetDB.SNetDB461;
+import edu.uw.cs.cse461.util.Log;
+
+/**
+ * This is just a test version.  It supports exchanging photos with other
+ * instances, but provides no way to create photos.  Instead, photos are
+ * simply entered into the gallery by some external means.
+ * 
+ * @author zahorjan
+ *
+ */
+public class SNet implements NetLoadableApp, HTTPProvider {
+	private static final String TAG="SNet";
+	private static final String GALLERYDIR = "../ConsoleRun/SNetGallery-";
+	private static final String SNETDBDIR = "../ConsoleRun";
+	
+	private RPCCallableMethod<SNet> fetchupdates;
+	private RPCCallableMethod<SNet> fetchphoto;
+	
+	private File mGalleryDir;
+	private DDNSFullName mMyName;
+	
+	private SNetController mSNetController;
+	
+	/**
+	 * loadableame() must return a unique string.  There is already an "echo" - the one that uses only RPC.
+	 * @return
+	 */
+	public String loadablename() {
+		return "snet";
+	}
+	
+	public void shutdown() {
+	}
+	
+	public String httpServe(String[] uriVec) throws DB461Exception {
+		return mSNetController.httpServe(uriVec);
+	}
+	
+	/**
+	 * OSLoadableApp's must provide a constructor taking no arguments
+	 */
+	public SNet() throws Exception {
+		// check for gallery
+		mGalleryDir = new File(GALLERYDIR + NetBase.theNetBase().hostname());
+		if ( !mGalleryDir.exists() ) {
+			String msg = "Gallery directory " + mGalleryDir.getAbsolutePath() + " doesn't seem to exist.  Creating it."; 
+			Log.e(TAG, msg);
+			mGalleryDir.mkdirs();
+		}
+		Log.w(TAG, "Gallery directory is " + mGalleryDir.getAbsolutePath());
+		
+		// set up SNetController -- tell it where the db is
+
+		mSNetController = new SNetController(SNETDBDIR);
+		
+		// register rpc interface
+		fetchupdates = new RPCCallableMethod<SNet>(this, "_fetchUpdates");
+		fetchphoto = new RPCCallableMethod<SNet>(this, "_fetchPhoto");
+
+		RPCService rpcService = (RPCService)NetBase.theNetBase().getService("rpc");
+		rpcService.registerHandler(loadablename(), "fetchUpdates", fetchupdates );
+		rpcService.registerHandler(loadablename(), "fetchPhoto", fetchphoto );
+		
+		// make sure user is in db
+		mMyName = new DDNSFullName(NetBase.theNetBase().hostname());
+		mSNetController.registerBaseUsers(mMyName);
+	}
+	
+	public void run() {
+		System.out.println(mSNetController.getStatusMsg());
+		Scanner scanner = new Scanner(System.in);
+		do {
+			try {
+				System.out.println("Commands:");
+				System.out.println("c filename - make filename your chosen photo");
+				System.out.println("d - dump database");
+				System.out.println("g n - set my generation number to n");
+				System.out.println("i - check and correct database integrity");
+				System.out.println("l - list gallery directory");
+				System.out.println("m ddnsname - make ddnsname a friend");
+				System.out.println("n filename - make filename your new photo");
+				System.out.println("x ddnsname - attempt update protocol with ddnsname");
+				System.out.println("exit - exit");
+				String cmd = scanner.next();
+
+				if ( cmd.equals("exit")) break;
+
+				else if ( cmd.equals("c") ) {
+					String filename = scanner.next();
+					mSNetController.newChosenPhoto(mMyName, mGalleryDir.getAbsolutePath() + "/" + filename, mGalleryDir);
+				}
+				
+				else if ( cmd.equals("d")) {
+					SNetDB461 db = null;
+					try {
+						db = new SNetDB461(mSNetController.DBName());
+						System.out.println(db.toString());
+					} finally {
+						if ( db != null ) db.close();
+					}
+				}
+				
+				else if ( cmd.equals("g")) {
+					int gen = scanner.nextInt();
+					mSNetController.setGenerationNumber(mMyName, gen);
+				}
+				
+				else if ( cmd.equals("i")) {
+					mSNetController.fixDB(mGalleryDir);
+				}
+				
+				else if ( cmd.equals("l") ) {
+					System.out.println("Gallery = " + GALLERYDIR + "[" + mGalleryDir.getAbsolutePath() + "]");
+				}
+
+				else if ( cmd.equals("m")) {
+					String ddnsname = scanner.next();
+					if ( ddnsname.equals("root")) ddnsname = "";
+					mSNetController.setFriend(new DDNSFullName(ddnsname), true);
+				}
+
+				else if ( cmd.equals("n") ) {
+					String filename = scanner.next();
+					mSNetController.newMyPhoto(mMyName, mGalleryDir.getAbsolutePath() + "/" + filename, mGalleryDir);
+				}
+
+				else if ( cmd.equals("x")) {
+					String ddnsname = scanner.next();
+					if ( ddnsname.equals("root")) ddnsname = "";
+					mSNetController.fetchUpdates(ddnsname, mGalleryDir);
+				}
+				
+				else {
+					Log.e(TAG, "Unrecognized command: " + cmd);
+				}
+				
+			} catch (Exception e) {
+				Log.e(TAG, "Caught exception: " + e.getMessage());
+				scanner.skip(".*\n");  // try to flush rest of line
+			}
+
+		} while ( true );
+	}
+	
+	public JSONObject _fetchUpdates(JSONObject args) throws Exception {
+		return mSNetController._fetchUpdates(args);
+	}
+
+	public JSONObject _fetchPhoto(JSONObject args) throws Exception {
+		return mSNetController._fetchPhoto(args);
+	}
+}

@@ -1,0 +1,101 @@
+package edu.uw.cs.cse461.sp12.OS;
+
+import java.util.HashMap;
+import java.util.LinkedList;
+
+import edu.uw.cs.cse461.sp12.OS.DDNSTree.DDNSNode;
+import edu.uw.cs.cse461.sp12.OS.DDNSService.DDNSException;
+import edu.uw.cs.cse461.sp12.OS.DDNSService.FullName;
+import edu.uw.cs.cse461.sp12.OS.RRecord.RRType;
+
+class DDNSMap extends HashMap<String,DDNSNode> {
+
+	class DDNSNode {
+		private FullName mName;
+		private HashMap<String, DDNSTree> mChildren;
+		private RRecordList mRecordList;
+
+		public class RRecordList { 
+			private LinkedList<RRecord> mRecordList;
+
+			public RRecordList() { mRecordList = new LinkedList<RRecord>(); }
+			public RRecord findRecord(RRType type) {
+				for ( RRecord r : mRecordList ) {
+					if ( r.type() == type ) return r;
+				}
+				return null;
+			}
+
+			public void add(RRecord r) { mRecordList.add(r); }
+			public RRecord remove(RRType type) { 
+				for (RRecord r : mRecordList ) {
+					if ( r.type() == type ) return r;
+				}
+				return null;
+			}
+			public String toString(String prefix) {
+				StringBuilder sb = new StringBuilder();
+				for ( RRecord r : mRecordList ) {
+					sb.append(prefix).append(r.toString()).append("\n");
+				}
+				return sb.toString();
+			}
+		}
+
+		public DDNSMap(FullName name) {
+			mName = name;
+			mChildren = new HashMap<String,DDNSTree>();
+
+		}
+
+		FullName name() { return mName; }
+		RRecordList records() { return mRecordList; }
+		DDNSTree findChild(String name) { return mChildren.get(name); }
+
+		// only one record of each type is allowed in the list
+		//TODO: is that enough?  CNAME + A?
+		RRecord addRecord(RRecord r) {
+			RRecord oldRecord = mRecordList.remove(r.type());
+			mRecordList.add(r);
+			return oldRecord;
+		}
+
+		private DDNSNode _addChild(FullName name) {
+			DDNSNode newChild = new DDNSNode(name);
+			mChildren.put(name.toString(), newChild);
+			return newChild;
+		}
+
+		private void _toString(StringBuilder sb, String prefix) {
+			sb.append(prefix).append(name());
+			prefix += "\t";
+			sb.append(prefix).append(records().toString(prefix)).append("\n");
+			for ( String childName : mChildren.keySet() ) {
+				sb.append(prefix).append(mChildren.get(childName).toString(prefix)).append("\n");
+			}
+		}
+
+		String toString(String prefix) {
+			StringBuilder sb = new StringBuilder();
+			_toString(sb, prefix);
+			return sb.toString();
+		}
+	}
+
+	// finds or adds node with given name
+	public DDNSNode findAddName( FullName fullname ) throws DDNSException {
+		DDNSTree current = this;
+		if ( ! fullname.toString().endsWith(this.mName.toString()) )
+			throw new DDNSException("_findAddName: Name '" + fullname + "' isn't in my zone [" + mName + "]");
+		String name = fullname.toString().substring(0, fullname.toString().length()-mName.toString().length());
+		String[] token =  name.split(".");
+		String currentName = mName.toString();
+		for ( int i = token.length-1; i>=0; i--) {
+			currentName = token[i] + "." + currentName; 
+			DDNSTree next = current.findChild(name);
+			if ( next == null ) return current._addChild(new FullName(currentName));
+		}
+
+		return current;
+	}
+}

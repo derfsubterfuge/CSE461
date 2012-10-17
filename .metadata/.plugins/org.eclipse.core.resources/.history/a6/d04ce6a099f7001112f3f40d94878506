@@ -1,0 +1,42 @@
+package edu.uw.cs.cse461.OS;
+
+
+/**
+ * The public interface for the OSProperties class.  The OSProperties class also extends
+ * <code>java.util.Properties<code>, so public methods of that class may be used as well.
+ * <p>
+ * <b>Note:</b> Like other interfaces in this project, this interface definition is provided
+ * for documentation reasons - it's a succinct listing of the public methods.  It is not intended that
+ * there ever be more than one implementation of the interface.
+ * 
+ * @author zahorjan
+ *
+ */
+public interface OSPropertiesInterface {
+	/**
+	 * Reads entries like x.submit.test.cse461.:IP:port
+	 */
+	Vector<String[]> readNameIPPortVec(String fieldName);
+	
+	/**
+	 * Reads entries like jz.cse461.:password
+	 */
+	Vector<String[]> readNamePasswordVec(String fieldName);
+	
+	/**
+	 * Reads entries like a:jz.cse461.:password and cname:jz.cse461:foo.cse461:password
+	 */
+	Vector<String[]> readNameRecordVec(String fieldName);
+
+	/**
+	 * Takes a space separated list of colon separated tokens and returns a Vector of String arrays.
+	 */
+	private Vector<String[]> readParsedVector(String fieldName);
+	
+	
+	public int getInt(String key) throws NoSuchFieldException;
+	public int getInt(String key, int defaultVal, String TAG);
+	public int getInt(String key, int defaultVal, int minimum, String TAG);
+	public int getInt(String key, int defaultVal, int minimum, int maximum, String TAG);
+
+}

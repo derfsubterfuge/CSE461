@@ -1,0 +1,17 @@
+1331336009323	Rename type 'TCPMessage'
+1331342751838	Delete element
+1331342755228	Delete element
+1331351357075	Rename package 'edu.uw.cs.cse461.sp12.TCPMessage'
+1331352472881	Delete element
+1331352476567	Delete element
+1331352683125	Rename package 'uw.cs.cse461.sp12.TCPMessage'
+1331356194091	Delete element
+1331421059018	Rename package 'edu.uw.cs.cse461.sp12.TCPMessage'
+1331421085329	Rename package 'edu.uw.cs.cse461.sp12.util.TCPMessage'
+1331421236827	Delete element
+1331421498564	Rename package 'edu.uw.cs.cse461.sp12.util.TCPMessageHandler'
+1331421840054	Rename method 'readByteMessage'
+1331421878322	Rename method 'readMessage'
+1331423798717	Rename method 'readStringMessage'
+1331423811905	Rename method 'readJSONArrayMessage'
+1331423879705	Rename method 'readByteMessage'

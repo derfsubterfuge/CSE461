@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<session version="1.0">
+<refactoring comment="Rename local variable &apos;wwwName&apos; in &apos;edu.uw.cs.cse461.HTTP.HTTPDService.HTTPDService()&apos; to &apos;mWwwName&apos;&#x0A;- Original project: &apos;HTTPDService&apos;&#x0A;- Original element: &apos;edu.uw.cs.cse461.HTTP.HTTPDService.HTTPDService().wwwName&apos;&#x0A;- Renamed element: &apos;wwwName&apos;&#x0A;- Update references to refactored element" description="Rename local variable &apos;wwwName&apos;" id="org.eclipse.jdt.ui.rename.local.variable" input="/src&lt;edu.uw.cs.cse461.HTTP{HTTPDService.java[HTTPDService~HTTPDService@wwwName!4217!4279!4224!4230!QString;!0!false" name="mWwwName" references="true" stamp="1347479927946" version="1.0"/>
+</session>

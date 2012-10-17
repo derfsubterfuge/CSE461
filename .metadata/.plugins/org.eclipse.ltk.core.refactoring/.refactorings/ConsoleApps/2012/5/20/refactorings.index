@@ -1,0 +1,17 @@
+1337217377241	Delete element
+1337280799121	Rename method 'updateOrCreateFriend'
+1337280876119	Rename method 'readOnePhoto'
+1337284760760	Rename field 'FRIENDTABLE'
+1337284776878	Delete element
+1337284785172	Delete element
+1337284902596	Rename type 'FriendRecord'
+1337285025462	Rename method 'createFriendRecord'
+1337287514850	Move compilation unit
+1337287737752	Move compilation unit
+1337313980661	Rename local variable 'friendName'
+1337313991688	Rename local variable 'friend'
+1337314003735	Rename local variable 'friendName'
+1337314221259	Rename local variable 'memberName'
+1337314697259	Rename local variable 'member'
+1337315066030	Rename local variable 'memberName'
+1337356987242	Delete element

@@ -1,0 +1,9 @@
+package edu.uw.cs.cse461.sp12.OS;
+
+public interface OSLoadable {
+	
+	public interface OSLoadableService extends OSLoadable {
+		
+	}
+
+}

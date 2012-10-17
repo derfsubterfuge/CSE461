@@ -8,7 +8,7 @@
 #------------------------------------------------
 
 debug.enable=1
-debug.level=5
+debug.level=3
 
 #------------------------------------------------
 # basic network config values
@@ -45,6 +45,7 @@ console.initialapp=appmanager
 # List of class names of Android applications to load
 android.apps=edu.uw.cs.cse461.AndroidApps.Infrastructure.AndroidAppManager \
              edu.uw.cs.cse461.AndroidApps.EchoRawActivity   \
+             edu.uw.cs.cse461.AndroidApps.PingTCPMessageHandlerActivity   \
              edu.uw.cs.cse461.AndroidApps.PingRPCActivity   \
              edu.uw.cs.cse461.AndroidApps.SNetActivity      \
              edu.uw.cs.cse461.AndroidApps.VersionActivity

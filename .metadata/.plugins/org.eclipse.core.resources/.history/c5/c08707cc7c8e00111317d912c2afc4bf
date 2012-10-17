@@ -1,0 +1,293 @@
+package edu.uw.cs.cse461.sp12.OS;
+
+import java.io.IOException;
+import java.lang.reflect.InvocationTargetException;
+import java.net.InetAddress;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.net.UnknownHostException;
+import java.util.HashMap;
+
+import org.json.JSONObject;
+
+import edu.uw.cs.cse461.sp12.OS.RPCMessage.RPCCallMessage;
+import edu.uw.cs.cse461.sp12.OS.RPCMessage.RPCCallMessage.RPCControlMessage;
+import edu.uw.cs.cse461.sp12.OS.RPCMessage.RPCCallMessage.RPCInvokeMessage;
+import edu.uw.cs.cse461.sp12.OS.RPCMessage.RPCResponseMessage;
+import edu.uw.cs.cse461.sp12.OS.RPCMessage.RPCResponseMessage.RPCErrorResponseMessage;
+import edu.uw.cs.cse461.sp12.OS.RPCMessage.RPCResponseMessage.RPCNormalResponseMessage;
+import edu.uw.cs.cse461.sp12.util.Log;
+import edu.uw.cs.cse461.sp12.util.TCPMessageHandler;
+
+/**
+ * Implements the side of RPC that receives remote invocation requests.
+ * 
+ * @author zahorjan
+ *
+ */
+public class RPCService extends RPCCallable implements Runnable {
+	private static final String TAG="RPCService";
+	
+	private HandlerRegistry mHandlerMap;
+	private boolean mShutdown;
+	
+	private ServerSocket mServerSocket;
+	
+	/**
+	 * This method must be implemented by RPCCallable's.
+	 */
+	@Override
+	public String servicename() {
+		return "rpc";
+	}
+	
+	//-----------------------------------------------------------------------------------------------
+	// HandlerRegistry
+	
+	private class HandlerRegistry {
+		private HashMap<String, HashMap<String, RPCCallableMethod>> mMap;
+		
+		public HandlerRegistry() {
+			mMap = new HashMap<String, HashMap<String, RPCCallableMethod>>();
+		}
+		
+		public void register(String serviceName, String methodName, RPCCallableMethod method) throws Exception {
+			if ( serviceName == null ) throw new IOException("Attempt to register a handler with serivce name == null");
+			if ( methodName == null ) throw new IOException("Attempt to register a handler with method name == null");
+			
+			synchronized(mMap) {
+				if ( !mMap.containsKey(serviceName) ) mMap.put( serviceName, new HashMap<String, RPCCallableMethod>());
+				mMap.get(serviceName).put(methodName, method);
+			}
+		}
+		
+		public JSONObject fire(String service, String method, JSONObject args) throws Exception {
+			try {
+				synchronized(mMap) {
+					if ( !mMap.containsKey(service) ) throw new IOException("Service " + service + " not registered on this host");
+					RPCCallableMethod handler = mMap.get(service).get(method);
+					if ( handler == null ) throw new IOException("Service " + service + " hasn't registered method " + method);
+					return handler.handleCall(args);
+				}
+			} catch (InvocationTargetException e) {
+				throw new Exception(e.getTargetException().getMessage());
+			}
+		}
+	}
+	// HandlerRegistry
+	//-----------------------------------------------------------------------------------------------
+	
+	
+	//-----------------------------------------------------------------------------------------------
+	// RPCCalleeSocket
+	
+
+	private enum RPCCalleeSocketState {PRECONNECT, CONNECTED, SHUTDOWN};
+	
+	/**
+	 * An RPCCalleeSocket is created when an RPCCallerSocket receives a connection.
+	 * It represents the server side of the connection.  The server writes to
+	 * this socket ONLY TO RETURN VALUES in response to an RPC invocation.
+	 * <p>
+	 * More than one call can be made using the RPCCalleeSocket, once established.
+	 * Calls are handled sequentially.
+	 * @author zahorjan
+	 *
+	 */
+	public class RPCCalleeSocket extends Socket implements Runnable {
+		private static final String TAG="RPCCalleeSocket";
+		
+		Socket mSocket = null;
+		private TCPMessageHandler mMsgHandler = null;
+		private String mRemoteHost = null;
+		private RPCCalleeSocketState mState;
+		
+		public RPCCalleeSocket(Socket sock) throws Exception {
+			mSocket = sock;
+			// make sure the timeout value in the config file is well-formed
+			int rpcTimeout = 15*1000; // default: 15 seconds
+			try {
+				if ( OS.config().getProperty("rpc.timeout") != null )
+					rpcTimeout = Integer.parseInt( OS.config().getProperty("rpc.timeout"));
+				if ( rpcTimeout <= 1000 ) {
+					Log.e(TAG, "ADVISORY: Requested socket timeout = " + rpcTimeout + ".  Resetting to minimum (1000).");
+					rpcTimeout = 1000;
+				}
+			} catch (Exception e) {
+				Log.e(TAG, "ADVISORY: Couldn't convert rcp.timeout to an integer: '" + OS.config().getProperty("rpc.timeout") + "'");
+			}
+			sock.setSoTimeout(rpcTimeout);
+
+			mMsgHandler = new TCPMessageHandler(mSocket);
+			mState = RPCCalleeSocketState.PRECONNECT;
+			new Thread(this).start();
+		}
+		
+		public void run() {
+			String messageStr = null;
+			RPCCallMessage callMessage = null;
+			RPCResponseMessage responseMessage = null;
+			JSONObject result = null;
+			
+			while ( mState != RPCCalleeSocketState.SHUTDOWN ) {
+				callMessage = null;
+				responseMessage = null;
+				try {
+					// read handshake msg and respond to it
+					messageStr = mMsgHandler.readMessageAsString();
+					Log.d(TAG, "Got message string: " + messageStr);
+					callMessage = (RPCCallMessage)RPCMessage.stringToMessage(messageStr);
+					Log.i(TAG, "Call message: " + callMessage.toString());
+					
+  				  	if ( callMessage.type().equals("control") ) {
+
+  				  		String action = ((RPCControlMessage)callMessage).action();
+						if ( action.equals("connect") ) {
+							if ( mState != RPCCalleeSocketState.PRECONNECT ) throw new IOException("connect requested when already connected");
+							mRemoteHost = callMessage.host();
+							mState = RPCCalleeSocketState.CONNECTED;
+							responseMessage = new RPCNormalResponseMessage(callMessage.id(), null);
+							mMsgHandler.sendMessage( responseMessage.toJSONObject() );
+						}
+						else throw new IOException("Bad argument");
+  				  	}
+  				  	
+					else if ( callMessage.type().equals("invoke") ) {
+	  				  	if ( mState != RPCCalleeSocketState.CONNECTED ) throw new IOException("invoke message sent before connect handshake");
+	  				  	if ( !mRemoteHost.equals(callMessage.host()) ) throw new IOException("Wrong host");
+	  				  	RPCInvokeMessage invokeMessage = (RPCInvokeMessage)callMessage;
+	  				  	result = mHandlerMap.fire( invokeMessage.app(), invokeMessage.method(), invokeMessage.args() );
+	  				  	responseMessage = new RPCNormalResponseMessage(callMessage.id(), result);
+	  				  	mMsgHandler.sendMessage( responseMessage.toJSONObject() );
+	  				  	mState = RPCCalleeSocketState.SHUTDOWN; // non-persistent connections
+					}
+					
+					else throw new IOException("Malformed message");
+
+				} catch (Exception e) {
+					// (possibly) unable to decode message (e.g., missing field) or some other error
+					try {
+						int id = -1;
+						if ( callMessage != null ) id = callMessage.id();
+						responseMessage = new RPCErrorResponseMessage( id, e.getMessage(), callMessage );  
+						mMsgHandler.sendMessage( responseMessage.toJSONObject() );					
+					} catch (Exception fatalException) {
+						Log.e(TAG, "run: caught unhandleable exception: " + e.getMessage());
+						try {
+							mMsgHandler.sendMessage( RPCErrorResponseMessage.FATAL_ERROR_RESPONSE +"\n" + fatalException.getMessage());
+						} catch (Exception ignoredException) {
+							// can't event send a String...
+						}
+					}
+					// if it isn't a decode error, it's fatal
+					//if ( !e.getClass().getName().equals("JSONException") ) mState = RPCCalleeSocketState.SHUTDOWN;
+					mState = RPCCalleeSocketState.SHUTDOWN;
+				}
+			} // while loop
+				
+			try {
+				Log.i(TAG, "Closing socket");
+				this.close();
+			} catch (Exception e) {}
+		}
+
+		public String getRemoteHost() {
+			return mRemoteHost;
+		}
+	}
+	// RPCCalleeSocket
+	//-----------------------------------------------------------------------------------------------
+	
+	/**
+	 * Constructor.  Creates the Java ServerSocket and binds it to a port.
+	 * If the config file specifies an rpc.serverport value, it should be bound to that port.
+	 * Otherwise, you should specify port 0, meaning the operating system should choose a currently unused port.
+	 * (The config file settings are available via the OS object.)
+	 * <p>
+	 * Once the port is created, a thread needs to be created to listen for connections on it.
+	 * 
+	 * @throws Exception
+	 */
+	RPCService() throws Exception {
+
+		String portStr = null;
+		int port = 0;
+		try {
+			portStr = OS.config().getProperty("rpc.serverport");
+			if ( portStr != null && !portStr.isEmpty() ) port = Integer.parseInt(portStr);
+		} catch (Exception e) {
+			throw new IOException("RPCServerSocket.createServerSocket: invalid rpc.serverport in config file: '" + portStr + "'");
+		}
+		mServerSocket = new ServerSocket(port);
+		
+		mHandlerMap = new HandlerRegistry();
+		mShutdown = false;
+		
+		// Set some socket options.
+                // setReuseAddress lets you reuse a server port immediately after terminating
+		// an application that has used it.  (Normally that port is unavailable for a while, for reasons we'll see
+		// later in the course.
+		// setSoTimeout causes a thread waiting for connections to timeout, instead of waiting forever, if no connection
+		// is made before the timeout interval expires.  (You don't have to use 1/2 sec. for this value - choose your own.)
+		mServerSocket.setReuseAddress(true); // allow port number to be reused immediately after close of this socket
+		mServerSocket.setSoTimeout(500); // well, we have to wake up every once and a while to check for program termination
+		
+		// we maybe should allow starting the rpc service to be separated from constructing it,
+		// to allow time to register handlers before it starts...
+		new Thread(this).start();
+	}
+	
+	/**
+	 * System is shutting down imminently.  Do any cleanup required.
+	 */
+	public void shutdown() {
+		mShutdown = true;
+		//TODO:  shut down all callee sockets?
+	}
+	
+	/**
+	 * Executed by an RPCService-created thread.  Sits in loop waiting for
+	 * connections, then creates an RPCCalleeSocket to handle each one.
+	 */
+	@Override
+	public void run() {
+		while( !mShutdown ) {
+			try {
+				Socket sock = mServerSocket.accept();
+				new RPCCalleeSocket(sock);  // creates a new thread to execute in the callee socket
+			} catch (Exception e) {
+				//TODO: ?
+			}
+		}
+		Log.d(TAG,  "Accept thread terminating");
+	}
+	
+	/**
+	 * Services and applications with RPC callable methods register them with the RPC service using this routine.
+	 * Those methods are then invoked as callbacks when an remote RPC request for them arrives.
+	 * @param serviceName  The name of the service.
+	 * @param methodName  The external, well-known name of the service's method to call
+	 * @param method The descriptor allowing invocation of the Java method implementing the call
+	 * @throws Exception
+	 */
+	public synchronized void registerHandler(String serviceName, String methodName, RPCCallableMethod method) throws Exception {
+		mHandlerMap.register(serviceName, methodName, method);
+	}
+	
+	/**
+	 * Returns the local IP address.
+	 * @return
+	 * @throws UnknownHostException
+	 */
+	public String localIP() throws UnknownHostException {
+		return IPFinder.getMyIP();
+	}
+
+	/**
+	 * Returns the port to which the RPC ServerSocket is bound.
+	 * @return
+	 */
+	public int localPort() {
+		return mServerSocket.getLocalPort();
+	}
+}

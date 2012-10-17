@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<session version="1.0">
+<refactoring comment="Copy element &apos;PingRaw.java&apos; to &apos;ConsoleApps/src/edu.uw.cs.cse461.ConsoleApps&apos;&#x0D;&#x0A;- Original project: &apos;ConsoleApps&apos;&#x0D;&#x0A;- Destination element: &apos;ConsoleApps/src/edu.uw.cs.cse461.ConsoleApps&apos;&#x0D;&#x0A;- Original element: &apos;edu.uw.cs.cse461.ConsoleApps.PingRaw.java&apos;" description="Copy compilation unit" destination="/src&lt;edu.uw.cs.cse461.ConsoleApps" element1="/src&lt;edu.uw.cs.cse461.ConsoleApps{PingRaw.java" files="0" flags="589830" folders="0" id="org.eclipse.jdt.ui.copy" policy="org.eclipse.jdt.ui.copyResources" stamp="1349563267327" units="1" version="1.0"/>
+</session>

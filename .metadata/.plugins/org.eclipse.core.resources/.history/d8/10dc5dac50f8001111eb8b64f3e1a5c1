@@ -1,0 +1,34 @@
+package edu.uw.cs.cse461.NetBase;
+
+import java.io.FileInputStream;
+import java.util.Set;
+
+import edu.uw.cs.cse461.NetBase.OSLoadableInterface.OSLoadableApp;
+import edu.uw.cs.cse461.NetBase.OSLoadableInterface.OSLoadableService;
+
+/**
+ * This is the public interface to (just) the core OS component.
+ * (Loaded services present their own interfaces.)  This interface is
+ * defined primarily as documentation -- you can see all the publicly
+ * accessible OS methods here.  It is NOT the intention that there ever be
+ * more than one implementation of this interface.
+ * @author zahorjan
+ *
+ */
+public interface OSInterface {
+	
+	public void boot(FileInputStream configFileInputStream) throws Exception;  // Boots the OS.  Reads config file info from arg string; loads services and apps.
+	public boolean isUp();      // Returns true if the OS is up, false otherwise 
+	public void shutdown();     // Shuts down the OS
+
+	public OSProperties config();   // Provides access to a parsed version of the config file read during boot
+	public String hostname();       // Convenience method to get the host name (as specified in the boot config file)
+	public long now();              // Returns current Unix time (seconds since 1/1/1970).
+	
+	public Set<String> loadedServiceNames();                  // Names of all currently loaded services
+	public Set<String> loadedAppNames();                      // Names of all currently loaded applications
+	public OSLoadableService getService(String servicename);  // Get a handle to a loaded service 
+	public OSLoadableApp getApp(String appname);              // Get a handle to a loaded application
+	public void startApp(String appname) throws Exception;    // Invoke run() method of a loaded application
+
+}

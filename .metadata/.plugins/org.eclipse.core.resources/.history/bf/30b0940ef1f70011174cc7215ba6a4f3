@@ -1,0 +1,37 @@
+package edu.uw.cs.cse461.OSConsoleApps;
+
+import edu.uw.cs.cse461.OS.DDNSResolverService;
+import edu.uw.cs.cse461.OS.DDNSService;
+import edu.uw.cs.cse461.OS.OS;
+import edu.uw.cs.cse461.OS.OSLoadable.OSLoadableApp;
+
+/**
+ * An application that prints the contents of the naming database used by the DDNS system. 
+ * @author zahorjan
+ *
+ */
+public class DumpDB implements OSLoadableApp {
+
+	public DumpDB() {
+	}
+	
+	public String loadablename() {
+		return "dumpdb";
+	}
+	
+	public void run() {
+		System.out.println("DDNS Service:");
+		DDNSService ddns = (DDNSService)OS.theOS().getService("ddns");
+		if ( ddns != null ) System.out.println(ddns);
+		else System.out.println("Not loaded");
+		
+		System.out.println("DDNS Resolver:");
+		DDNSResolverService resolver = (DDNSResolverService)OS.theOS().getService("ddnsresolver");
+		if ( resolver != null ) System.out.println(resolver);
+		else System.out.println("Not loaded");
+	}
+	
+	public void shutdown() {
+	}
+
+}

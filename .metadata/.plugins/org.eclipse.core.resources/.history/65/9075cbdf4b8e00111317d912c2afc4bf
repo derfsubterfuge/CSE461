@@ -1,0 +1,35 @@
+package edu.uw.cs.cse461.sp12.OS;
+
+public class DDNSRegistrationAgent {
+	private Timer mTimer;
+	public DDNSRegistrationAgent() {
+		//--------------------------------------------------------------
+		// periodically let my parent know where I am
+		//--------------------------------------------------------------
+	
+		mTimer = new Timer();
+		mTimer.scheduleAtFixedRate(new TimerTask() {
+			public void run() {
+				try {
+					FullName myFullHostname = new FullName(OS.hostname());
+					int myPort = ((RPCService)OS.getService("rpc")).localPort();
+					String myIP = InetAddress.getLocalHost().getHostAddress();
+					FullName parent = myFullHostname.parent();
+					ARecord parentAddress = resolve( parent.toString() );
+					if ( parentAddress.isNegative() ) throw new DDNSException("Parent resolves to negative entry: " + myFullHostname.parent() );
+					RPCCallerSocket socket = new RPCCallerSocket(parent.toString(), parentAddress.ip(), Integer.toString(parentAddress.port()));
+					socket.invoke(servicename(), "register", new JSONObject().put("host", OS.hostname())
+																		 .put("ip", myIP)
+																		 .put("port", myPort)
+																		 .put("password", mMyPassword)
+								 );
+				} catch (Exception e) {
+					Log.e(TAG, "ADVISORY: Caught exception while registering with parent:\n" + e.getMessage());
+				}
+			}
+		},
+		0L, (int)(mCacheTTL * 1000 * 0.8) );
+	}
+	
+	
+}

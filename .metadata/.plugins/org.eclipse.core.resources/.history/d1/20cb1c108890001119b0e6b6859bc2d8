@@ -1,0 +1,66 @@
+package edu.uw.cs.cse461.sp12.OS;
+
+import java.util.Timer;
+import java.util.TimerTask;
+
+import org.json.JSONObject;
+
+import edu.uw.cs.cse461.sp12.OS.DDNSRRecord.ARecord;
+import edu.uw.cs.cse461.sp12.OS.OSLoadable.OSLoadableService;
+import edu.uw.cs.cse461.sp12.util.Log;
+
+public class DDNSRegistrationAgent implements OSLoadableService {
+	private static final String TAG="DDNSRegistrationAgent";
+	private static final int DEFAULTREFRESHINTERVAL = 600;
+	private static final int MINIMUMREFRESHINTERVAL = 60;
+	
+	private String mMyPassword;
+	private Timer mTimer;
+	
+	@Override
+	public String loadablename() { return "ddnsregistrationagent"; }
+	
+	@Override
+	public void shutdown() {
+		if ( mTimer != null ) mTimer.cancel();
+		mTimer = null;
+	}
+	
+	/**
+	 * Periodically lets my parent know where I am.
+	 */
+	public DDNSRegistrationAgent() {
+
+		mMyPassword = OS.config().getProperty("ddns.parentpassword");
+		mTimer = new Timer();
+
+		int refreshInterval = OS.config().getInt("ddns.parentrefreshinterval", DEFAULTREFRESHINTERVAL, MINIMUMREFRESHINTERVAL, TAG);
+		Log.w(TAG, "Refresh interval = " + refreshInterval + " seconds");
+		
+		mTimer.scheduleAtFixedRate(new TimerTask() {
+			public void run() {
+				try {
+					DDNSFullName myFullHostname = new DDNSFullName(OS.hostname());
+					DDNSFullName parent = myFullHostname.parent();
+					RPCService rpcService = (RPCService)OS.getService("rpc"); 
+					String myIP = rpcService.localIP();
+					int myPort = rpcService.localPort();
+					
+					ARecord parentAddress = ((DDNSResolverService)OS.getService("ddnsresolver")).resolve( parent );
+					if ( parentAddress.isNegative() ) throw new DDNSException("Parent resolves to negative entry: " + myFullHostname.parent() );
+					RPCCallerSocket socket = new RPCCallerSocket(parent.toString(), parentAddress.ip(), parentAddress.port());
+					socket.invoke("ddns", "register", new JSONObject().put("host", OS.hostname())
+							                                          .put("ip", myIP)
+							                                          .put("port", myPort)
+							                                          .put("password", mMyPassword)
+								 );
+				} catch (Exception e) {
+					Log.e(TAG, "ADVISORY: Caught exception while registering with parent:\n" + e.getMessage());
+				}
+			}
+		},
+		0L, refreshInterval * 1000 );
+	}
+	
+	
+}

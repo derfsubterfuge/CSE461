@@ -1,0 +1,9 @@
+package edu.uw.cs.cse461.sp12.OS;
+
+import java.net.InetAddress;
+
+class IPFinder {
+	static String getMyIP() {
+		return InetAddress.getLocalHost().getHostAddress();
+	}
+}

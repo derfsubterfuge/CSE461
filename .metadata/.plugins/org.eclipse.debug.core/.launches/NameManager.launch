@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<launchConfiguration type="org.eclipse.jdt.launching.localJavaApplication">
+<listAttribute key="org.eclipse.debug.core.MAPPED_RESOURCE_PATHS">
+<listEntry value="/JavaNameManager/src/edu/uw/cs/cse461/sp12/NameManager/NameManager.java"/>
+</listAttribute>
+<listAttribute key="org.eclipse.debug.core.MAPPED_RESOURCE_TYPES">
+<listEntry value="1"/>
+</listAttribute>
+<stringAttribute key="org.eclipse.jdt.launching.MAIN_TYPE" value="edu.uw.cs.cse461.sp12.NameManager.NameManager"/>
+<stringAttribute key="org.eclipse.jdt.launching.PROJECT_ATTR" value="JavaNameManager"/>
+</launchConfiguration>

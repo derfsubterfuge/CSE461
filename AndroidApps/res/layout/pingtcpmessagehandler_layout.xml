@@ -30,17 +30,27 @@
             android:layout_marginTop="5dp"
             android:ems="10"
             android:inputType="text" />
+       
+        <EditText
+            android:id="@+id/pingtcpmessagehandler_porttext"
+            android:layout_width="120dp"
+            android:layout_height="wrap_content"
+            android:layout_alignParentLeft="true"
+            android:layout_below="@+id/pingtcpmessagehandler_iptext"
+            android:layout_marginTop="5dp"
+            android:ems="10"
+            android:inputType="numberDecimal" />
 
         <Button
             android:id="@+id/pingtcpmessagehandler_gobutton"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_alignParentLeft="true"
-            android:layout_below="@+id/pingtcpmessagehandler_iptext"
+            android:layout_below="@+id/pingtcpmessagehandler_porttext"
             android:layout_marginLeft="70dp"
             android:onClick="onGoClicked"
             android:layout_marginTop="5dp"
-            android:text="@string/echo" />
+            android:text="Ping" />
 
         <TextView
             android:id="@+id/pingtcpmessagehandler_outputtext"

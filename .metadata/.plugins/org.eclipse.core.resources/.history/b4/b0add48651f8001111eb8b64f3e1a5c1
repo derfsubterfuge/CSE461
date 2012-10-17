@@ -1,0 +1,55 @@
+package edu.uw.cs.cse461.NetBase;
+
+/**
+ * Base class for OS loadable classes.  In addition to the methods shown
+ * here, each class implementing this interface must provide
+ * a constructor that takes no arguments.
+ *
+ * @author zahorjan
+ *
+ */
+public interface NetLoadableInterface {
+	
+	/**
+	 * Returns the name used to identify the loadable.  Names must be unique,
+	 * and may have global (cross-system) meaning.
+	 * (For example, the instance for the RPC service should return "rpc".)
+	 * @return
+	 */
+	public String loadablename();
+
+	/**
+	 * Called when the service should shut down.  If the service has started 
+	 * any threads, its important that they be terminated - otherwise, the application
+	 * as a whole won't terminate.  You can do any other cleanup that's required 
+	 * as well.
+	 */
+	public void shutdown();
+	
+	/**
+	 * All console (non-Android) apps must implement this interface.
+	 * 
+	 * @author zahorjan
+	 *
+	 */
+	public interface OSLoadableApp extends NetLoadableInterface {
+		/**
+		 * This method is called each time the app is invoked via the AppManager. 
+		 * @throws Exception
+		 */
+		public void run() throws Exception;
+	}
+	
+	/**
+	 * Interface name defined to make it easy to identify loadable services.
+	 * Unlike loadable apps, loadable services have no run() method.  They
+	 * may start threads when they are constructed, or simply be available
+	 * much as libraries (running only using the caller's thread).
+	 * <p>
+	 * Loadable services live in the OS package, while loadable apps live in 
+	 * the OSConsoleApps package. That means that loadable services can protect
+	 * their interfaces by making them package scope, rather than public.
+	 */
+	interface OSLoadableService extends NetLoadableInterface {
+	}
+}
