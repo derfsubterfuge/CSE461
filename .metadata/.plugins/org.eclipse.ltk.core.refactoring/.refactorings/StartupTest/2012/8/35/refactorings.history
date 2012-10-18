@@ -1,4 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<session version="1.0">
-<refactoring comment="Copy element &apos;StartupServiceInterface.java&apos; to &apos;StartupTestActivity/src/edu.uw.cs.cse461.StartupTest&apos;&#x0A;- Original project: &apos;StartupTest&apos;&#x0A;- Destination element: &apos;StartupTestActivity/src/edu.uw.cs.cse461.StartupTest&apos;&#x0A;- Original element: &apos;edu.uw.cs.cse461.StartupTest.StartupServiceInterface.java&apos;" description="Copy compilation unit" destination="=StartupTestActivity/src&lt;edu.uw.cs.cse461.StartupTest" element1="/src&lt;edu.uw.cs.cse461.StartupTest{StartupServiceInterface.java" files="0" flags="589830" folders="0" id="org.eclipse.jdt.ui.copy" policy="org.eclipse.jdt.ui.copyResources" stamp="1346439006131" units="1" version="1.0"/>
-</session>

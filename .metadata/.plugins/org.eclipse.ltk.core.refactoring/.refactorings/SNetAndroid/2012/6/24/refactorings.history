@@ -1,4 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<session version="1.0">
-<refactoring comment="Rename package &apos;edu.uw.cs.cse461.sp12.SNet&apos; to &apos;edu.uw.cs.cse461.SNet&apos;&#x0A;- Original project: &apos;SNetAndroid&apos;&#x0A;- Original element: &apos;SNetAndroid/src/edu.uw.cs.cse461.sp12.SNet&apos;&#x0A;- Renamed element: &apos;SNetAndroid/src/edu.uw.cs.cse461.SNet&apos;&#x0A;- Update references to refactored element&#x0A;- Update textual occurrences in comments and strings" description="Rename package &apos;edu.uw.cs.cse461.sp12.SNet&apos;" flags="589830" hierarchical="false" id="org.eclipse.jdt.ui.rename.package" input="/src&lt;edu.uw.cs.cse461.sp12.SNet" name="edu.uw.cs.cse461.SNet" qualified="false" references="true" stamp="1339450638343" textual="false" version="1.0"/>
-</session>

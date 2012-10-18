@@ -1,4 +1,0 @@
-# This file contains device-specific configuration information
-# that is read by the infrastructure at launch.
-
-hostname=jz.cse461

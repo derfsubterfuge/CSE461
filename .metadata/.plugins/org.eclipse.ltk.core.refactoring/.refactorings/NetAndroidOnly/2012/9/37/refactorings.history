@@ -1,4 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<session version="1.0">
-<refactoring comment="Rename compilation unit &apos;edu.uw.cs.cse461.Net.Base.NetLoadable.java&apos; to &apos;NetLoadableAndroidApp.java&apos;&#x0A;- Original project: &apos;NetAndroidOnly&apos;&#x0A;- Original element: &apos;edu.uw.cs.cse461.Net.Base.NetLoadable.java&apos;&#x0A;- Renamed element: &apos;edu.uw.cs.cse461.Net.Base.NetLoadableAndroidApp.java&apos;" description="Rename compilation unit &apos;NetLoadable.java&apos;" flags="2" id="org.eclipse.jdt.ui.rename.compilationunit" input="/src&lt;edu.uw.cs.cse461.Net.Base{NetLoadable.java" name="NetLoadableAndroidApp.java" references="false" stamp="1347750946540" version="1.0"/>
-</session>

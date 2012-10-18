@@ -1,4 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<session version="1.0">
-<refactoring comment="Move element &apos;IPFinder.java&apos; to &apos;utilConsoleOnly/src/edu.uw.cs.cse461.util&apos;&#x0A;- Original project: &apos;NetConsoleOnly&apos;&#x0A;- Destination element: &apos;utilConsoleOnly/src/edu.uw.cs.cse461.util&apos;&#x0A;- Original element: &apos;edu.uw.cs.cse461.Net.Base.IPFinder.java&apos;&#x0A;- Update references to refactored element" description="Move compilation unit" destination="=utilConsoleOnly/src&lt;edu.uw.cs.cse461.util" element1="/src&lt;edu.uw.cs.cse461.Net.Base{IPFinder.java" files="0" flags="589830" folders="0" id="org.eclipse.jdt.ui.move" patterns="*" policy="org.eclipse.jdt.ui.moveResources" qualified="false" references="true" stamp="1347124876693" units="1" version="1.0"/>
-</session>

@@ -1,4 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<session version="1.0">
-<refactoring comment="Move element &apos;jz.cse461.snet.db&apos; to &apos;OS&apos;&#x0A;- Original project: &apos;ConfigFiles&apos;&#x0A;- Destination element: &apos;OS&apos;&#x0A;- Original element: &apos;jz.cse461.snet.db&apos;&#x0A;- Update references to refactored element" description="Move file" destination="=OS" element1="jz.cse461.snet.db" files="1" flags="589830" folders="0" id="org.eclipse.jdt.ui.move" policy="org.eclipse.jdt.ui.moveResources" qualified="false" references="true" stamp="1338485187383" units="0" version="1.0"/>
-</session>

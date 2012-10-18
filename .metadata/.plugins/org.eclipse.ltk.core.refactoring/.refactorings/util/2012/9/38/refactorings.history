@@ -1,4 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<session version="1.0">
-<refactoring comment="Rename type &apos;edu.uw.cs.cse461.util.SampledStatistic.ArithmeticMean&apos; to &apos;ArithmeticMeanSet&apos;&#x0A;- Original project: &apos;util&apos;&#x0A;- Original element: &apos;edu.uw.cs.cse461.util.SampledStatistic.ArithmeticMean&apos;&#x0A;- Renamed element: &apos;edu.uw.cs.cse461.util.SampledStatistic.ArithmeticMeanSet&apos;&#x0A;- Update references to refactored element&#x0A;- Update textual occurrences in comments and strings" description="Rename type &apos;ArithmeticMean&apos;" flags="589830" id="org.eclipse.jdt.ui.rename.type" input="/src&lt;edu.uw.cs.cse461.util{SampledStatistic.java[SampledStatistic[ArithmeticMean" matchStrategy="1" name="ArithmeticMeanSet" qualified="false" references="true" similarDeclarations="false" stamp="1348170734864" textual="false" version="1.0"/>
-</session>
