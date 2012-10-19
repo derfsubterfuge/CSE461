@@ -28,6 +28,8 @@ import edu.uw.cs.cse461.util.SampledStatistic.ElapsedTimeInterval;
  * @author zahorjan
  *
  */
+
+// this comment is to check that we can successfully commit files back and forth using Git
 public class PingTCPMessageHandler extends NetLoadableConsoleApp implements PingTCPMessageHandlerInterface {
 	private static final String TAG="PingRaw";
 	
