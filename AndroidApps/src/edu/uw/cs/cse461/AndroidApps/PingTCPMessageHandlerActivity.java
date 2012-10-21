@@ -165,7 +165,8 @@ public class PingTCPMessageHandlerActivity extends NetLoadableAndroidApp {
 	    								" Total time = " + String.format("%.2f msec", ElapsedTime.get("PingTCPMH").mean()));
 
 							} catch (Exception e) {
-			    				Log.e(TAG, "Caught exception: " + e.getMessage());
+								ElapsedTime.abort("PingTCPMH");
+			    				Log.e(TAG, "Caught exception: " + e.toString() + e.getMessage());
 			    				BackgroundToast.showToast(ContextManager.getActivityContext(), "Ping attempt failed: " + e.getMessage(), Toast.LENGTH_LONG);
 							}
     					}
@@ -183,8 +184,8 @@ public class PingTCPMessageHandlerActivity extends NetLoadableAndroidApp {
      * @throws Exception
      */
     private void readUserInputs() throws Exception {
-    	mServerIP = ((TextView)findViewById(R.id.pingtcpmessagehandler_iptext)).getText().toString();
-    	mServerPort = ((TextView)findViewById(R.id.pingtcpmessagehandler_porttext)).getText().toString();
+    	mServerIP = ((TextView)findViewById(R.id.pingtcpmessagehandler_iptext)).getText().toString().trim();
+    	mServerPort = ((TextView)findViewById(R.id.pingtcpmessagehandler_porttext)).getText().toString().trim();
     }
 
     private void _setOutputText(String msg) {

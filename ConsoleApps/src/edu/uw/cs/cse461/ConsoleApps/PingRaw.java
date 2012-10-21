@@ -1,12 +1,10 @@
 package edu.uw.cs.cse461.ConsoleApps;
 
 import java.io.BufferedReader;
-import java.io.DataInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
-import java.io.PrintStream;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
@@ -112,23 +110,32 @@ public class PingRaw extends NetLoadableConsoleApp implements PingRawInterface {
 	public ElapsedTimeInterval udpPing(String hostIP, int udpPort, int socketTimeout, int nTrials) {
 		for (int i = 0; i < nTrials; i++) {
 			System.out.println("UDP Trial " + (i+1));
+			boolean aborted = false;
 			ElapsedTime.start("PingRaw_UDPTotalDelay");
 			try {
 				DatagramSocket socket = new DatagramSocket();
-				byte[] data = {'a'};
-				DatagramPacket packet = new DatagramPacket(data, 1, InetAddress.getByName(hostIP), udpPort);
-				socket.setSoTimeout(socketTimeout);
-				socket.send(packet);
-				socket.receive(packet);
-				socket.close();
-				ElapsedTime.stop("PingRaw_UDPTotalDelay");
+				try {
+					byte[] data = {'a'};
+					DatagramPacket packet = new DatagramPacket(data, 1, InetAddress.getByName(hostIP), udpPort);
+					socket.setSoTimeout(socketTimeout);
+					socket.send(packet);
+					socket.receive(packet);
+				} catch (SocketException e) {
+					System.out.println("\tError setting timeout! Aborting trial.");
+					ElapsedTime.abort("PingRaw_UDPTotalDelay");
+					aborted = true;
+				} catch (IOException e) {
+					System.out.println("\tTimeout!");
+					ElapsedTime.abort("PingRaw_UDPTotalDelay");
+					aborted = true;
+				} finally {
+					// close connection
+					socket.close();
+					if (!aborted)	
+						ElapsedTime.stop("PingRaw_UDPTotalDelay");
+				}
+
 			} catch (SocketException e) {
-				System.out.println("\tTimeout!");
-				ElapsedTime.abort("PingRaw_UDPTotalDelay");
-			} catch (UnknownHostException e) {
-				System.out.println("\tTimeout!");
-				ElapsedTime.abort("PingRaw_UDPTotalDelay");
-			} catch (IOException e) {
 				System.out.println("\tTimeout!");
 				ElapsedTime.abort("PingRaw_UDPTotalDelay");
 			}
@@ -146,29 +153,44 @@ public class PingRaw extends NetLoadableConsoleApp implements PingRawInterface {
 	public ElapsedTimeInterval tcpPing(String hostIP, int tcpPort, int socketTimeout, int nTrials) {
 		for (int i = 0; i < nTrials; i++) {
 			System.out.println("TCP Trial " + (i+1));
+			boolean aborted = false;
 			ElapsedTime.start("PingRaw_TCPTotal");
 			
 			// create socket and connect to host
 			try {
 				Socket socket = new Socket(hostIP, tcpPort);
-				socket.setSoTimeout(socketTimeout);
-				
-				//send data to server
-			    InputStream is = socket.getInputStream();
-				OutputStream os = socket.getOutputStream();
-				byte[] data = {'a'};
-			    os.write(data);
-			    is.read();
-				
-				// close connection
-				socket.close();
-				ElapsedTime.stop("PingRaw_TCPTotal");		
+				try {
+					socket.setSoTimeout(socketTimeout);
+					//send data to server
+				    InputStream is = socket.getInputStream();
+					OutputStream os = socket.getOutputStream();
+					byte[] data = {'a'};
+				    os.write(data);
+				    
+				    is.read();
+				} catch (SocketException ex) {
+					System.out.println("\tError setting timeout! Aborting trial.");
+					ElapsedTime.abort("PingRaw_TCPTotal");
+					aborted = true;
+				} catch (IOException ex) {
+					System.out.println("\tTimeout!");
+					ElapsedTime.abort("PingRaw_TCPTotal");
+					aborted = true;
+				} finally {
+					// close connection
+					socket.close();
+					if (!aborted) 
+						ElapsedTime.stop("PingRaw_TCPTotal");
+				}
 
 			} catch (UnknownHostException e) {
 				System.out.println("\tInvalid hostname!");
 				ElapsedTime.abort("PingRaw_TCPTotal");
 			} catch (IOException e) {
-				System.out.println("\tTimeout or connection error!");
+				System.out.println("\tConnection error!");
+				ElapsedTime.abort("PingRaw_TCPTotal");
+			} catch (IllegalArgumentException e) {
+				System.out.println("\tIllegal port number!");
 				ElapsedTime.abort("PingRaw_TCPTotal");
 			}
 		}
