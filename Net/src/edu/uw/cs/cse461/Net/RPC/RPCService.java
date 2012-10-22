@@ -41,9 +41,14 @@ public class RPCService extends NetLoadableService implements RPCServiceInterfac
 	 * @throws Exception
 	 */
 	public RPCService() throws Exception {
-		super("rpc", true);
+		super("rpc", true);	
+		// create serversocket, binding to port from config file, or 0 if there isn't one given
+		int rpcPort = NetBase.theNetBase().config().getAsInt("rpc.serverport", 0, TAG);
+		mServerSocket = new ServerSocket(rpcPort);
 		Log.i(TAG,  "Server socket port = " + mServerSocket.getLocalPort());
 		mIsUp = true;
+		
+		// start listening for connections on this serversocket
 		(new RPCListenThread()).start();
 	}
 	
@@ -154,44 +159,50 @@ public class RPCService extends NetLoadableService implements RPCServiceInterfac
 		
 		public void run() {
 			//TODO: catch errors properly
-			
-			TCPMessageHandler tcpMsgHandler = null;
-			tcpMsgHandler = new TCPMessageHandler(mSocket);
-			tcpMsgHandler.setMaxReadLength(MAX_READ_SIZE);
-			//TODO: replace all strings with constants in TCPMessageHandler
-			JSONObject handshake = tcpMsgHandler.readMessageAsJSONObject();
-			if(!handshake.getString("action").equals("connect"))
-				throw new JSONException("Initial message did not have the action 'connect'");
-			if(!handshake.getString("type").equals("control"))
-				throw new JSONException("Initial message did not have type 'control'");
-			int callId = handshake.getInt("id");
-			
-			JSONObject returnShake = new JSONObject();
-			returnShake.put("id", incId());
-			returnShake.put("type", "OK");
-			
-			tcpMsgHandler.sendMessage(returnShake);
-			
-			JSONObject request = tcpMsgHandler.readMessageAsJSONObject();
-			
-			
-			
-			
-			if(tcpMsgHandler != null) {
-				try {
-					tcpMsgHandler.discard();
-				} catch(Exception e1) {
-					//shouldn't happen
+			try {
+				TCPMessageHandler tcpMsgHandler = null;
+				tcpMsgHandler = new TCPMessageHandler(mSocket);
+				tcpMsgHandler.setMaxReadLength(MAX_READ_SIZE);
+				
+				//TODO: replace all strings with constants in TCPMessageHandler
+				JSONObject handshake = tcpMsgHandler.readMessageAsJSONObject();
+				if(!handshake.getString("action").equals("connect"))
+					throw new JSONException("Initial message did not have the action 'connect'");
+				if(!handshake.getString("type").equals("control"))
+					throw new JSONException("Initial message did not have type 'control'");
+				int callId = handshake.getInt("id");
+				
+				JSONObject returnShake = new JSONObject();
+				returnShake.put("id", incId());
+				returnShake.put("type", "OK");
+				
+				tcpMsgHandler.sendMessage(returnShake);
+				
+				JSONObject request = tcpMsgHandler.readMessageAsJSONObject();
+				
+				
+				if(tcpMsgHandler != null) {
+					try {
+						tcpMsgHandler.discard();
+					} catch(Exception e1) {
+						//shouldn't happen
+					}
 				}
-			}
-			
-			if(mSocket != null) {
-				try { 
-					mSocket.close();
-				} catch (Exception e1) {
-					//shouldn't happen
+				
+				if(mSocket != null) {
+					try { 
+						mSocket.close();
+					} catch (Exception e1) {
+						//shouldn't happen
+					}
 				}
+
+				
+			} catch (Exception e) {
+				e.printStackTrace();
+				
 			}
+
 		}
 	}
 }
