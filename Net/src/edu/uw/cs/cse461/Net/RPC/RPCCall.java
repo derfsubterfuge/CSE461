@@ -31,7 +31,8 @@ import edu.uw.cs.cse461.util.Log;
  */
 public class RPCCall extends NetLoadableService {
 	private static final String TAG="RPCCall";
-
+	private static int mId = 0;
+	
 	//-------------------------------------------------------------------------------------------
 	//-------------------------------------------------------------------------------------------
 	// The static versions of invoke() is just a convenience for caller's -- it

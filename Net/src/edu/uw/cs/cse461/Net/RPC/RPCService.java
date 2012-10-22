@@ -8,6 +8,8 @@ import java.util.HashMap;
 import java.util.Map;
 
 import org.json.JSONException;
+import org.json.JSONObject;
+
 import edu.uw.cs.cse461.Net.Base.NetBase;
 import edu.uw.cs.cse461.Net.Base.NetLoadable.NetLoadableService;
 import edu.uw.cs.cse461.Net.TCPMessageHandler.TCPMessageHandler;
@@ -22,9 +24,12 @@ import edu.uw.cs.cse461.util.Log;
  */
 public class RPCService extends NetLoadableService implements RPCServiceInterface {
 	private static final String TAG="RPCService";
+	private static final int MAX_READ_SIZE = 10000; //bytes
 	private Map<String, RPCCallableMethod> mServiceMethodMap = new HashMap<String, RPCCallableMethod>();
 	private ServerSocket mServerSocket = null;
 	private boolean mIsUp = false;
+	private static int mId = 0;
+	
 	/**
 	 * Constructor.  Creates the Java ServerSocket and binds it to a port.
 	 * If the config file specifies an rpc.serverport value, it should be bound to that port.
@@ -100,11 +105,14 @@ public class RPCService extends NetLoadableService implements RPCServiceInterfac
 		return loadablename() + (mIsUp ? " is up" : " is down");
 	}
 	
+	private synchronized int incId() {
+		return mId++;
+	}
+	
 	private class RPCListenThread extends Thread {
 		
 		public void run() {
 			Socket socket = null;
-			TCPMessageHandler tcpMsgHandler = null;
 			
 			int socketTimeout = NetBase.theNetBase().config().getAsInt("rpc.timeout", 30, TAG)*1000; //convert from seconds to millis
 			try {
@@ -115,22 +123,12 @@ public class RPCService extends NetLoadableService implements RPCServiceInterfac
 						socket = mServerSocket.accept();
 					
 						socket.setSoTimeout(socketTimeout);
-						tcpMsgHandler = new TCPMessageHandler(socket);
-						(new RPCWorkThread(socket, tcpMsgHandler)).start();
+						(new RPCWorkThread(socket)).start();
 						
 						//make null so that this doesn't kill the spawned threads if an exception occurs
 						socket = null;
-						tcpMsgHandler = null;
 					} catch(IOException e) {
 						Log.e(TAG, "Was unable to establish I/O connection.");
-						
-						if(tcpMsgHandler != null) {
-							try {
-								tcpMsgHandler.discard();
-							} catch(Exception e1) {
-								//shouldn't happen
-							}
-						}
 						
 						if(socket != null) {
 							try { 
@@ -148,16 +146,52 @@ public class RPCService extends NetLoadableService implements RPCServiceInterfac
 	}
 	
 	private class RPCWorkThread extends Thread {
-		TCPMessageHandler mTcpMsgHandler = null;
 		Socket mSocket = null;
 		
-		public RPCWorkThread(Socket socket, TCPMessageHandler tcpMsgHandler) {
-			mTcpMsgHandler = tcpMsgHandler;
+		public RPCWorkThread(Socket socket) {
 			mSocket = socket;
 		}
 		
 		public void run() {
+			//TODO: catch errors properly
 			
+			TCPMessageHandler tcpMsgHandler = null;
+			tcpMsgHandler = new TCPMessageHandler(mSocket);
+			tcpMsgHandler.setMaxReadLength(MAX_READ_SIZE);
+			//TODO: replace all strings with constants in TCPMessageHandler
+			JSONObject handshake = tcpMsgHandler.readMessageAsJSONObject();
+			if(!handshake.getString("action").equals("connect"))
+				throw new JSONException("Initial message did not have the action 'connect'");
+			if(!handshake.getString("type").equals("control"))
+				throw new JSONException("Initial message did not have type 'control'");
+			int callId = handshake.getInt("id");
+			
+			JSONObject returnShake = new JSONObject();
+			returnShake.put("id", incId());
+			returnShake.put("type", "OK");
+			
+			tcpMsgHandler.sendMessage(returnShake);
+			
+			JSONObject request = tcpMsgHandler.readMessageAsJSONObject();
+			
+			
+			
+			
+			if(tcpMsgHandler != null) {
+				try {
+					tcpMsgHandler.discard();
+				} catch(Exception e1) {
+					//shouldn't happen
+				}
+			}
+			
+			if(mSocket != null) {
+				try { 
+					mSocket.close();
+				} catch (Exception e1) {
+					//shouldn't happen
+				}
+			}
 		}
 	}
 }
