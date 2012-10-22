@@ -1,9 +1,17 @@
 package edu.uw.cs.cse461.Net.RPC;
 
+import java.io.IOException;
+import java.net.ServerSocket;
+import java.net.Socket;
 import java.net.UnknownHostException;
+import java.util.HashMap;
+import java.util.Map;
 
+import org.json.JSONException;
+import edu.uw.cs.cse461.Net.Base.NetBase;
 import edu.uw.cs.cse461.Net.Base.NetLoadable.NetLoadableService;
 import edu.uw.cs.cse461.util.IPFinder;
+import edu.uw.cs.cse461.util.Log;
 
 /**
  * Implements the server side of RPC that receives remote invocation requests.
@@ -13,7 +21,9 @@ import edu.uw.cs.cse461.util.IPFinder;
  */
 public class RPCService extends NetLoadableService implements RPCServiceInterface {
 	private static final String TAG="RPCService";
-	
+	private Map<String, RPCCallableMethod> mServiceMethodMap = new HashMap<String, RPCCallableMethod>();
+	private ServerSocket mServerSocket = null;
+	private boolean mIsUp = false;
 	/**
 	 * Constructor.  Creates the Java ServerSocket and binds it to a port.
 	 * If the config file specifies an rpc.serverport value, it should be bound to that port.
@@ -26,6 +36,9 @@ public class RPCService extends NetLoadableService implements RPCServiceInterfac
 	 */
 	public RPCService() throws Exception {
 		super("rpc", true);
+		Log.i(TAG,  "Server socket port = " + mServerSocket.getLocalPort());
+		mIsUp = true;
+		(new RPCThread()).start();
 	}
 	
 	/**
@@ -33,6 +46,15 @@ public class RPCService extends NetLoadableService implements RPCServiceInterfac
 	 */
 	@Override
 	public void shutdown() {
+		if(mServerSocket != null) {
+			try {
+				mIsUp = false;
+				mServerSocket.close();
+			} catch (IOException e) {
+				//Shouldn't happen
+			}
+			
+		}
 	}
 	
 	/**
@@ -45,6 +67,10 @@ public class RPCService extends NetLoadableService implements RPCServiceInterfac
 	 */
 	@Override
 	public synchronized void registerHandler(String serviceName, String methodName, RPCCallableMethod method) throws Exception {
+		String key = serviceName + "." + methodName;
+		if(mServiceMethodMap.containsKey(key))
+			throw new Exception(key + " is already registered");
+		mServiceMethodMap.put(key, method);
 	}
 	
 	/**
@@ -63,12 +89,43 @@ public class RPCService extends NetLoadableService implements RPCServiceInterfac
 	 */
 	@Override
 	public int localPort() {
-		return 0;
+		if(mServerSocket != null)
+			return mServerSocket.getLocalPort();
+		return -1;
 	}
 	
 	@Override
 	public String dumpState() {
-		return "some string";
+		return loadablename() + (mIsUp ? " is up" : " is down");
 	}
 	
+	private class RPCThread extends Thread {
+		
+		public void run() {
+			Socket socket = null;
+			
+			int socketTimeout = NetBase.theNetBase().config().getAsInt("rpc.timeout", 30, TAG)*1000; //convert from seconds to millis
+			try {
+				while ( mIsUp ) {
+					// accept() blocks until a client connects.  When it does, a new socket is created that communicates only
+					// with that client.  That socket is returned.
+					socket = mServerSocket.accept();
+					try {
+						socket.setSoTimeout(socketTimeout);
+						
+						//TODO
+						
+					} catch(JSONException e) {
+						Log.e(TAG, "Did not recieve a complete JSONArray with the transfer size");
+					} catch(IOException e) {
+						Log.e(TAG, "Was unable to establish I/O connection.");
+					} finally {
+						if ( socket != null ) try { socket.close(); } catch (Exception e) {}
+					}
+				}
+			} catch (Exception e) {
+				Log.w(TAG, "RPC server thread exiting due to exception: " + e.getMessage());
+			}
+		}
+	}
 }

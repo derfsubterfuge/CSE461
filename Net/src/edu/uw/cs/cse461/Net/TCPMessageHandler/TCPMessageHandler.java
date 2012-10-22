@@ -30,6 +30,12 @@ public class TCPMessageHandler implements TCPMessageHandlerInterface {
 	private static final String TAG="TCPMessageHandler";
 	
 	public static final String TRANSFER_SIZE_KEY = "transferSize";
+	public static final String ID_KEY = "id";
+	public static final String HOST_KEY = "host";
+	public static final String MSG_TYPE_KEY = "type";
+	public static final String ACTION_KEY = "action";
+	public static final String MSG_KEY = "msg";
+	public static final String ADDITIONAL_OPTIONS_KEY = "options";
 	
 	private static final int LENGTH_PREFIX_SIZE = 4; //bytes
 	

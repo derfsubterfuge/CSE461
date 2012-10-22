@@ -1,6 +1,7 @@
 package edu.uw.cs.cse461.Net.RPC;
 
 import java.io.IOException;
+import java.net.Socket;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.Timer;
@@ -11,6 +12,7 @@ import org.json.JSONObject;
 
 import edu.uw.cs.cse461.Net.Base.NetBase;
 import edu.uw.cs.cse461.Net.Base.NetLoadable.NetLoadableService;
+import edu.uw.cs.cse461.Net.TCPMessageHandler.TCPMessageHandler;
 import edu.uw.cs.cse461.util.Log;
 
 /**
@@ -89,7 +91,13 @@ public class RPCCall extends NetLoadableService {
 			JSONObject userRequest,   // arguments to send to remote method
 			boolean tryAgain          // true if an invocation failure on a persistent connection should cause a re-try of the call, false to give up
 			) throws JSONException, IOException {
-		return null;
+		Socket socket = null;
+		socket = new Socket(ip, port);
+		int socketTimeout = NetBase.theNetBase().config().getAsInt("rpc.timeout", 30, TAG)*1000; //convert from seconds to millis
+		socket.setSoTimeout(socketTimeout);
+		TCPMessageHandler tcpMsgHandler = new TCPMessageHandler(socket);
+		tcpMsgHandler.sendMessage(userRequest);
+		return tcpMsgHandler.readMessageAsJSONObject();
 	}
 	
 	/**
@@ -105,7 +113,7 @@ public class RPCCall extends NetLoadableService {
 	 */
 	@Override
 	public String dumpState() {
-		return "Current peristed connections are ...";
+		return "There are no persistent connections.";
 	}
 
 }
