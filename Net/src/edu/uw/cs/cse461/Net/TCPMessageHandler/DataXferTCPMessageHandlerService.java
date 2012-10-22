@@ -66,6 +66,7 @@ public class DataXferTCPMessageHandlerService extends NetLoadableService {
 		
 		public void run() {
 			Socket socket = null;
+			TCPMessageHandler tcpMsgHandler = null;
 			
 			int socketTimeout = NetBase.theNetBase().config().getAsInt("dataxfertcpmessagehandler.sockettimeout", 500, TAG);
 			try {
@@ -75,7 +76,7 @@ public class DataXferTCPMessageHandlerService extends NetLoadableService {
 					socket = mServerSocket.accept();
 					try {
 						socket.setSoTimeout(socketTimeout);
-						TCPMessageHandler tcpMsgHandler = new TCPMessageHandler(socket); 
+						tcpMsgHandler = new TCPMessageHandler(socket); 
 						tcpMsgHandler.setMaxReadLength(250);
 					
 						JSONObject sizeMessage = tcpMsgHandler.readMessageAsJSONObject();
@@ -91,7 +92,21 @@ public class DataXferTCPMessageHandlerService extends NetLoadableService {
 					} catch(IOException e) {
 						Log.e(TAG, "Was unable to establish I/O connection.");
 					} finally {
-						if ( socket != null ) try { socket.close(); } catch (Exception e) {}
+						if(tcpMsgHandler != null) {
+							try {
+								tcpMsgHandler.discard();
+							} catch(Exception e) {
+								//shouldn't happen
+							}
+						}
+						
+						if(socket != null) {
+							try { 
+								socket.close();
+							} catch (Exception e) {
+								//shouldn't happen
+							}
+						}
 					}
 				}
 			} catch (Exception e) {

@@ -10,6 +10,7 @@ import java.util.Map;
 import org.json.JSONException;
 import edu.uw.cs.cse461.Net.Base.NetBase;
 import edu.uw.cs.cse461.Net.Base.NetLoadable.NetLoadableService;
+import edu.uw.cs.cse461.Net.TCPMessageHandler.TCPMessageHandler;
 import edu.uw.cs.cse461.util.IPFinder;
 import edu.uw.cs.cse461.util.Log;
 
@@ -38,7 +39,7 @@ public class RPCService extends NetLoadableService implements RPCServiceInterfac
 		super("rpc", true);
 		Log.i(TAG,  "Server socket port = " + mServerSocket.getLocalPort());
 		mIsUp = true;
-		(new RPCThread()).start();
+		(new RPCListenThread()).start();
 	}
 	
 	/**
@@ -99,33 +100,64 @@ public class RPCService extends NetLoadableService implements RPCServiceInterfac
 		return loadablename() + (mIsUp ? " is up" : " is down");
 	}
 	
-	private class RPCThread extends Thread {
+	private class RPCListenThread extends Thread {
 		
 		public void run() {
 			Socket socket = null;
+			TCPMessageHandler tcpMsgHandler = null;
 			
 			int socketTimeout = NetBase.theNetBase().config().getAsInt("rpc.timeout", 30, TAG)*1000; //convert from seconds to millis
 			try {
 				while ( mIsUp ) {
 					// accept() blocks until a client connects.  When it does, a new socket is created that communicates only
 					// with that client.  That socket is returned.
-					socket = mServerSocket.accept();
 					try {
+						socket = mServerSocket.accept();
+					
 						socket.setSoTimeout(socketTimeout);
+						tcpMsgHandler = new TCPMessageHandler(socket);
+						(new RPCWorkThread(socket, tcpMsgHandler)).start();
 						
-						//TODO
-						
-					} catch(JSONException e) {
-						Log.e(TAG, "Did not recieve a complete JSONArray with the transfer size");
+						//make null so that this doesn't kill the spawned threads if an exception occurs
+						socket = null;
+						tcpMsgHandler = null;
 					} catch(IOException e) {
 						Log.e(TAG, "Was unable to establish I/O connection.");
-					} finally {
-						if ( socket != null ) try { socket.close(); } catch (Exception e) {}
+						
+						if(tcpMsgHandler != null) {
+							try {
+								tcpMsgHandler.discard();
+							} catch(Exception e1) {
+								//shouldn't happen
+							}
+						}
+						
+						if(socket != null) {
+							try { 
+								socket.close();
+							} catch (Exception e1) {
+								//shouldn't happen
+							}
+						}
 					}
 				}
 			} catch (Exception e) {
 				Log.w(TAG, "RPC server thread exiting due to exception: " + e.getMessage());
 			}
+		}
+	}
+	
+	private class RPCWorkThread extends Thread {
+		TCPMessageHandler mTcpMsgHandler = null;
+		Socket mSocket = null;
+		
+		public RPCWorkThread(Socket socket, TCPMessageHandler tcpMsgHandler) {
+			mTcpMsgHandler = tcpMsgHandler;
+			mSocket = socket;
+		}
+		
+		public void run() {
+			
 		}
 	}
 }
