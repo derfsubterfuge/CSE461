@@ -180,9 +180,9 @@ public class RPCService extends NetLoadableService implements RPCServiceInterfac
 				// if we've reached here, then we're willing to connect - return the handshake
 				JSONObject returnShake = new JSONObject();
 				returnShake.put("id", incId());
+				returnShake.put("host", localIP());
 				returnShake.put("type", "OK");
 				returnShake.put("callid", callId);
-				// TODO: add host
 				
 				// send the handshake back to the caller
 				tcpMsgHandler.sendMessage(returnShake);
@@ -208,10 +208,10 @@ public class RPCService extends NetLoadableService implements RPCServiceInterfac
 				// return response
 				JSONObject response = new JSONObject();
 				response.put("id", mId);
+				response.put("host", localIP());
 				response.put("callid", callId);
 				response.put("value", returnObj);
 				response.put("type", "OK");
-				// TODO: add host
 				
 				tcpMsgHandler.sendMessage(response);
 

@@ -13,6 +13,7 @@ import org.json.JSONObject;
 import edu.uw.cs.cse461.Net.Base.NetBase;
 import edu.uw.cs.cse461.Net.Base.NetLoadable.NetLoadableService;
 import edu.uw.cs.cse461.Net.TCPMessageHandler.TCPMessageHandler;
+import edu.uw.cs.cse461.util.IPFinder;
 import edu.uw.cs.cse461.util.Log;
 
 /**
@@ -92,13 +93,54 @@ public class RPCCall extends NetLoadableService {
 			JSONObject userRequest,   // arguments to send to remote method
 			boolean tryAgain          // true if an invocation failure on a persistent connection should cause a re-try of the call, false to give up
 			) throws JSONException, IOException {
-		Socket socket = null;
-		socket = new Socket(ip, port);
+		// TODO: handle the following: 
+		// error messages, timeouts, failures, retries, etc
+		
+		
+		// create tcp socket to connect with
+		Socket socket = new Socket(ip, port);
 		int socketTimeout = NetBase.theNetBase().config().getAsInt("rpc.timeout", 30, TAG)*1000; //convert from seconds to millis
 		socket.setSoTimeout(socketTimeout);
 		TCPMessageHandler tcpMsgHandler = new TCPMessageHandler(socket);
-		tcpMsgHandler.sendMessage(userRequest);
-		return tcpMsgHandler.readMessageAsJSONObject();
+		
+		// increment mId
+		mId++;
+		
+		// send handshake
+		JSONObject handshake = new JSONObject();
+		handshake.put("id", mId);
+		handshake.put("host", IPFinder.getMyIP());
+		handshake.put("action", "connect");
+		handshake.put("type", "control");
+		tcpMsgHandler.sendMessage(handshake);
+		
+		// read and validate handshake response from server
+		JSONObject handshakeResponse = tcpMsgHandler.readMessageAsJSONObject();
+		if (handshakeResponse.getInt("callid") != mId)
+			throw new JSONException("Received response not intended for this connection.");
+		if (!handshakeResponse.getString("type").equals("OK"))
+			throw new JSONException("Error making handshake with connection.");
+		
+		// if we get here everything is a-ok, so send the rpc request
+		JSONObject request = new JSONObject();
+		request.put("id", mId);
+		request.put("host", IPFinder.getMyIP());
+		request.put("app", serviceName);
+		request.put("method", method);
+		request.put("args", userRequest);
+		request.put("type", "invoke");
+		tcpMsgHandler.sendMessage(request);
+		
+		// now read and validate the return response from the server
+		JSONObject rpcReturn = tcpMsgHandler.readMessageAsJSONObject();
+		if (rpcReturn.getInt("callid") != mId)
+			throw new JSONException("Received response not intended for this connection.");
+		if (!rpcReturn.getString("type").equals("OK"))
+			throw new JSONException("Error making handshake with connection.");
+		// no errors (hopefully) if we get here
+		// close connection and return the return value 
+		socket.close();		
+		return rpcReturn.getJSONObject("value");
 	}
 	
 	/**
