@@ -115,10 +115,10 @@ public class RPCService extends NetLoadableService implements RPCServiceInterfac
 		return mId++;
 	}
 	
-	private void sendErrorMsg(int callid, TCPMessageHandler msgHandler, String message) {
+	private void sendErrorMsg(int id, int callid, TCPMessageHandler msgHandler, String message) {
 		try {
 			JSONObject errorMsg = new JSONObject();
-			errorMsg.put("id", mId);
+			errorMsg.put("id", id);
 			errorMsg.put("host", localIP());
 			errorMsg.put("callid", callid);
 			errorMsg.put("type", "ERROR");
@@ -127,6 +127,10 @@ public class RPCService extends NetLoadableService implements RPCServiceInterfac
 		} catch (Exception e) {
 			// do nothing - if we run into an error while trying to send an error message there's not much we can do
 		}
+	}
+	
+	private void printMsg(String s) {
+		System.out.println(TAG + ": " + s);
 	}
 	
 	private class RPCListenThread extends Thread {
@@ -148,8 +152,6 @@ public class RPCService extends NetLoadableService implements RPCServiceInterfac
 						//make null so that this doesn't kill the spawned threads if an exception occurs
 						socket = null;
 					} catch(IOException e) {
-						Log.e(TAG, "Was unable to establish I/O connection.");
-						
 						if(socket != null) {
 							try { 
 								socket.close();
@@ -157,6 +159,7 @@ public class RPCService extends NetLoadableService implements RPCServiceInterfac
 								//shouldn't happen
 							}
 						}
+						throw e;
 					}
 				}
 			} catch (Exception e) {
@@ -172,35 +175,35 @@ public class RPCService extends NetLoadableService implements RPCServiceInterfac
 		Socket mSocket = null;
 		
 		public RPCWorkThread(Socket socket) {
+			
 			mSocket = socket;
 		}
 		
 		public void run() {
 			TCPMessageHandler tcpMsgHandler = null;
-			int callId = 0;
+			int callId = -1;
+			int id = incId();
 			try {
-				incId();
-				
 				tcpMsgHandler = new TCPMessageHandler(mSocket);
 				tcpMsgHandler.setMaxReadLength(MAX_READ_SIZE);
 				
-				//TODO: replace all strings with constants in TCPMessageHandler
-				
 				// receive and validate the handshake "connect" request from the caller
 				JSONObject handshake = tcpMsgHandler.readMessageAsJSONObject();
+				
 				callId = handshake.getInt("id");
 				if(!handshake.getString("action").equals("connect")) {
-					sendErrorMsg(callId, tcpMsgHandler, "Initial message did not have the action 'connect'");
+					sendErrorMsg(id, callId, tcpMsgHandler, "Initial message did not have the action 'connect'");
 					return;
 				}
+				
 				if(!handshake.getString("type").equals("control")) {
-					sendErrorMsg(callId, tcpMsgHandler,"Initial message did not have type 'control'");
+					sendErrorMsg(id, callId, tcpMsgHandler,"Initial message did not have type 'control'");
 					return;
 				}
 				
 				// if we've reached here, then we're willing to connect - return the handshake
 				JSONObject returnShake = new JSONObject();
-				returnShake.put("id", mId);
+				returnShake.put("id", id);
 				returnShake.put("host", localIP());
 				returnShake.put("type", "OK");
 				returnShake.put("callid", callId);
@@ -210,30 +213,33 @@ public class RPCService extends NetLoadableService implements RPCServiceInterfac
 				
 				// now read the rpccall request from the caller
 				JSONObject request = tcpMsgHandler.readMessageAsJSONObject();
+				
 				// make sure this is a method invocation request
 				if(!request.getString("type").equals("invoke")) {
-					sendErrorMsg(callId, tcpMsgHandler,"RPCCall request message did not have type 'invoke'.");
+					sendErrorMsg(id, callId, tcpMsgHandler,"RPCCall request message did not have type 'invoke'.");
 					return;
 				}
+				
 				// now get all the info we need to invoke the method
 				String app = request.getString("app");
 				String method = request.getString("method");
 				JSONObject args = request.getJSONObject("args");
-				
+				callId = request.getInt("id");
 				// validate the invocation request:
 				if(!mServiceMethodMap.containsKey(app+"."+method)) {
-					sendErrorMsg(callId, tcpMsgHandler, "The requested method is not registered - unable to invoke");
+					sendErrorMsg(id, callId, tcpMsgHandler, "The requested method is not registered - unable to invoke");
 					return;
 				}
 				
 				// attempt to invoke the requested method 
 				JSONObject returnObj = null;
+				id = incId();
 				try {
 					returnObj = mServiceMethodMap.get(app+"."+method).handleCall(args);
 				} catch (Exception e) {
 					// create and send back error response for method invocation: (different from handshake errormsg!)
 					JSONObject methodErrMsg = new JSONObject();
-					methodErrMsg.put("id", mId);
+					methodErrMsg.put("id", id);
 					methodErrMsg.put("host", localIP());
 					methodErrMsg.put("callid", callId);
 					methodErrMsg.put("type", "ERROR");
@@ -247,20 +253,20 @@ public class RPCService extends NetLoadableService implements RPCServiceInterfac
 				// shouldn't have to worry about returnObj being null here, 
 				// unless that's what the method wanted to return
 				JSONObject response = new JSONObject();
-				response.put("id", mId);
+				response.put("id", id);
 				response.put("host", localIP());
 				response.put("callid", callId);
 				response.put("value", returnObj);
 				response.put("type", "OK");
 				
 				tcpMsgHandler.sendMessage(response);
-
+				
 			} catch (JSONException e) {
-				sendErrorMsg(callId, tcpMsgHandler, e.toString());
+				sendErrorMsg(id, callId, tcpMsgHandler, e.toString());
 			} catch (IOException e) {
-				sendErrorMsg(callId, tcpMsgHandler, e.toString());
+				sendErrorMsg(id, callId, tcpMsgHandler, e.toString());
 			} catch (Exception e) {
-				sendErrorMsg(callId, tcpMsgHandler, e.toString());
+				sendErrorMsg(id, callId, tcpMsgHandler, e.toString());
 			} finally {
 				// discard tcpMsgHandler and close socket
 				if(tcpMsgHandler != null) {

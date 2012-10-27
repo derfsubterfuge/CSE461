@@ -73,6 +73,9 @@ public class RPCCall extends NetLoadableService {
 		super("rpccall", true);
 	}
 
+	private synchronized int incId() {
+		return mId++;
+	}
 	/**
 	 * This private method performs the actual invocation, including the management of persistent connections.
 	 * 
@@ -95,23 +98,27 @@ public class RPCCall extends NetLoadableService {
 			) throws JSONException, IOException {
 		
 		Socket socket = null;
+		TCPMessageHandler tcpMsgHandler = null;
 		try {
 			// create tcp socket to connect with
+			
 			socket = new Socket(ip, port);
+			
 			int socketTimeout = NetBase.theNetBase().config().getAsInt("rpc.timeout", 30, TAG)*1000; //convert from seconds to millis
 			socket.setSoTimeout(socketTimeout);
-			TCPMessageHandler tcpMsgHandler = new TCPMessageHandler(socket);
+			tcpMsgHandler = new TCPMessageHandler(socket);
 			
 			// increment mId
-			mId++;
+			int id = incId();
 			
 			// send handshake
 			JSONObject handshake = new JSONObject();
-			handshake.put("id", mId);
+			handshake.put("id", id);
 			handshake.put("host", IPFinder.getMyIP());
 			handshake.put("action", "connect");
 			handshake.put("type", "control");
 			tcpMsgHandler.sendMessage(handshake);
+			
 			
 			// read and validate handshake response from server
 			JSONObject handshakeResponse = tcpMsgHandler.readMessageAsJSONObject();
@@ -122,18 +129,21 @@ public class RPCCall extends NetLoadableService {
 			// if its not an ERROR message must be OK 
 			if (!handshakeResponse.getString("type").equals("OK"))
 				throw new IOException("Error making handshake with connection.");
-			if (handshakeResponse.getInt("callid") != mId)
+			if (handshakeResponse.getInt("callid") != id)
 				throw new JSONException("Received response not intended for this connection.");
+			
 			
 			// if we get here everything is a-ok, so send the rpc request
 			JSONObject request = new JSONObject();
-			request.put("id", mId);
+			id = incId();
+			request.put("id", id);
 			request.put("host", IPFinder.getMyIP());
 			request.put("app", serviceName);
 			request.put("method", method);
 			request.put("args", userRequest);
 			request.put("type", "invoke");
 			tcpMsgHandler.sendMessage(request);
+			
 			
 			// now read and validate the return response from the server
 			JSONObject rpcReturn = tcpMsgHandler.readMessageAsJSONObject();
@@ -144,13 +154,26 @@ public class RPCCall extends NetLoadableService {
 			// if its not an ERROR message must be OK 
 			if (!rpcReturn.getString("type").equals("OK"))
 				throw new IOException("Error invoking remote procedure.");
-			if (rpcReturn.getInt("callid") != mId)
+			if (rpcReturn.getInt("callid") != id)
 				throw new JSONException("Received response not intended for this connection.");
 
 			return rpcReturn.getJSONObject("value");
 		} finally {
-			if (socket != null)
-				socket.close();		
+			if(tcpMsgHandler != null) {
+				try {
+					tcpMsgHandler.discard();
+				} catch(Exception e1) {
+					//shouldn't happen
+				}
+			}
+			
+			if(socket != null) {
+				try { 
+					socket.close();
+				} catch (Exception e1) {
+					//shouldn't happen
+				}
+			}	
 		}
 	}
 	
@@ -170,4 +193,7 @@ public class RPCCall extends NetLoadableService {
 		return "There are no persistent connections.";
 	}
 
+	private void printMsg(String s) {
+		System.out.println(TAG + ": " + s);
+	}
 }

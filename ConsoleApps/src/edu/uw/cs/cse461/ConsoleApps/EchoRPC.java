@@ -47,7 +47,6 @@ public class EchoRPC extends NetLoadableConsoleApp {
 					System.out.print("Enter message to be echoed, or empty line to exit: ");
 					String msg = console.readLine();
 					if ( msg.isEmpty() ) return;
-					
 					JSONObject response = RPCCall.invoke(targetIP, targetRPCPort, "echorpc", "echo", new JSONObject().put("msg", msg) );
 					
 					if ( response.has("msg") ) System.out.println(response.getString("msg"));
