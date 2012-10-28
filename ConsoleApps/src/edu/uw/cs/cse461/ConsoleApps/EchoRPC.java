@@ -43,7 +43,6 @@ public class EchoRPC extends NetLoadableConsoleApp {
 			
 			while ( true ) {
 				try {
-
 					System.out.print("Enter message to be echoed, or empty line to exit: ");
 					String msg = console.readLine();
 					if ( msg.isEmpty() ) return;

@@ -33,6 +33,7 @@ import edu.uw.cs.cse461.util.Log;
 public class RPCCall extends NetLoadableService {
 	private static final String TAG="RPCCall";
 	private static int mId = 0;
+	private static final int MAX_READ_SIZE = 100000; //bytes
 	
 	//-------------------------------------------------------------------------------------------
 	//-------------------------------------------------------------------------------------------
@@ -107,6 +108,7 @@ public class RPCCall extends NetLoadableService {
 			int socketTimeout = NetBase.theNetBase().config().getAsInt("rpc.timeout", 30, TAG)*1000; //convert from seconds to millis
 			socket.setSoTimeout(socketTimeout);
 			tcpMsgHandler = new TCPMessageHandler(socket);
+			tcpMsgHandler.setMaxReadLength(MAX_READ_SIZE);
 			
 			// increment mId
 			int id = incId();

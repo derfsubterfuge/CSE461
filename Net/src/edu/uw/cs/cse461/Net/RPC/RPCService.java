@@ -24,7 +24,7 @@ import edu.uw.cs.cse461.util.Log;
  */
 public class RPCService extends NetLoadableService implements RPCServiceInterface {
 	private static final String TAG="RPCService";
-	private static final int MAX_READ_SIZE = 10000; //bytes
+	private static final int MAX_READ_SIZE = 100000; //bytes
 	private Map<String, RPCCallableMethod> mServiceMethodMap = new HashMap<String, RPCCallableMethod>();
 	private ServerSocket mServerSocket = null;
 	private boolean mIsUp = false;
@@ -284,7 +284,6 @@ public class RPCService extends NetLoadableService implements RPCServiceInterfac
 					}
 				}	
 			}
-
 		}
 	}
 }
