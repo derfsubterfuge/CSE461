@@ -229,6 +229,7 @@ public class DDNSService extends NetLoadableService implements HTTPProviderInter
 					}
 				}
 			}
+			resultJSON.put("resulttype", "unregisterresult");
 		} catch(DDNSException e) {
 			resultJSON = ddnsexceptionToJSON(e);
 		}
@@ -288,6 +289,7 @@ public class DDNSService extends NetLoadableService implements HTTPProviderInter
 					}
 				}
 			}
+			resultJSON.put("resulttype", "registerresult");
 		} catch(DDNSException e) {
 			resultJSON = ddnsexceptionToJSON(e);
 		}
@@ -325,6 +327,7 @@ public class DDNSService extends NetLoadableService implements HTTPProviderInter
 					resultJSON.put("done", true);
 				}	
 			}
+			resultJSON.put("resulttype", "resolveresult");
 		} catch(DDNSException e) {
 			resultJSON = ddnsexceptionToJSON(e);
 		}
