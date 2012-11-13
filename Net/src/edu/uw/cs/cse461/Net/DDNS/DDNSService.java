@@ -2,6 +2,8 @@ package edu.uw.cs.cse461.Net.DDNS;
 
 import java.util.HashMap;
 import java.util.Map;
+
+import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -495,9 +497,11 @@ public class DDNSService extends NetLoadableService implements HTTPProviderInter
 				result.put("Record", this.getRecord());
 				if(this.nChildren.size() > 0) {
 					int i = 1;
+					JSONArray children = new JSONArray();
 					for(String child : nChildren.keySet()) {
-						result.append("Children", child);
+						children.put(child);
 					}
+					result.put("Children", children);
 				} else {
 					result.put("Children", "None");
 				}
