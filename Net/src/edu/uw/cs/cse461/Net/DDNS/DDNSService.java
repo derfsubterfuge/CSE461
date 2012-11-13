@@ -117,24 +117,14 @@ public class DDNSService extends NetLoadableService implements HTTPProviderInter
 		String[] soaNode = nodes[0].split(":");
 		if(!soaNode[0].toUpperCase().equals(SOA_PREFIX)) {
 			throw new DDNSRuntimeException("first node in list must be an SOA node");
-		} else {
-			String hostname = NetBase.theNetBase().config().getProperty("net.hostname", null);
-			if(hostname == null) {
-				throw new DDNSRuntimeException("net.hostname cannot be null");
-			} else if(!soaNode[1].equals(hostname)) {
-				throw new DDNSRuntimeException("SOA node must have same name as the hostname");
-			}
 		}
 
-		mRoot = new DDNSNode(soaNode[1], soaNode[2], new SOARecord());
+		mRoot = new DDNSNode(new DDNSFullName(soaNode[1]), soaNode[2], new SOARecord());
 
 		for(int i = 1; i < nodes.length; i++) {
 			String[] nodeInfo = nodes[i].split(":");
-			String parentName = nodeInfo[1];
-			parentName = parentName.substring(parentName.indexOf('.')+1);
-			if(parentName.equals(nodeInfo[1])) {
-				throw new DDNSRuntimeException(nodeInfo[1] + " is already the address of the SOA");
-			}
+			DDNSFullNameInterface nodeName = new DDNSFullName(nodeInfo[1]);
+			DDNSFullNameInterface parentName = nodeName.parent();
 			
 			DDNSNode parentNode = nodeLookup(parentName, true);
 			DDNSRRecord record = parentNode.getRecord();
@@ -142,10 +132,10 @@ public class DDNSService extends NetLoadableService implements HTTPProviderInter
 				throw new DDNSRuntimeException(nodeInfo[1] + " has a parent that is either a CNAME or NS");
 			}
 			
-			if(parentNode.hasChild(nodeInfo[1])) {
-				throw new DDNSRuntimeException(nodeInfo[1] + " has already been created");
+			if(parentNode.hasChild(nodeName)) {
+				throw new DDNSRuntimeException(nodeName.toString() + " has already been created");
 			} else if(nodeInfo[0].toUpperCase().equals(SOA_PREFIX)) {
-				throw new DDNSRuntimeException(nodeInfo[1] + " cannot be another SOA node");
+				throw new DDNSRuntimeException(nodeName.toString() + " cannot be another SOA node");
 			} else if(nodeInfo[0].toUpperCase().equals(CNAME_PREFIX)) {
 				record = new CNAMERecord(nodeInfo[2]);  
 			} else if(nodeInfo[0].toUpperCase().equals(A_PREFIX)) {
@@ -155,7 +145,7 @@ public class DDNSService extends NetLoadableService implements HTTPProviderInter
 			}
 			
 			String pw = nodeInfo[nodeInfo.length-1];
-			DDNSNode newNode = new DDNSNode(nodeInfo[1], pw, record);
+			DDNSNode newNode = new DDNSNode(nodeName, pw, record);
 			parentNode.addChild(newNode);
 		}
 	}
@@ -179,13 +169,6 @@ public class DDNSService extends NetLoadableService implements HTTPProviderInter
 		if(!valid) {
 			throw new DDNSRuntimeException("Invalid node definition format: " + node);
 		}
-		
-		String hostname = NetBase.theNetBase().config().getProperty("net.hostname", null);
-		if(hostname == null) {
-			throw new DDNSRuntimeException("hostname cannot be null");
-		} else if(valid && !nodeInfo[1].endsWith(hostname)) {
-			throw new DDNSRuntimeException("cannot create node that is not in the zone: " + hostname);
-		}
 	}
 	
 	//---------------------------------------------------------------------------
@@ -199,41 +182,42 @@ public class DDNSService extends NetLoadableService implements HTTPProviderInter
 	 * @throws JSONException
 	 * @throws DDNSException
 	 */
-	public JSONObject _rpcUnregister(JSONObject args) throws JSONException, DDNSException {
+	public JSONObject _rpcUnregister(JSONObject args) {
 		JSONObject resultJSON = new JSONObject();
-		String name = args.getString("name");
 		try {
+			DDNSFullNameInterface name = new DDNSFullName(args.getString("name"));
+			String pw = args.getString("password");
+			
+			DDNSNode node;
+			RRType recordType;
+			JSONObject nodeJSON;
 			synchronized(this) {
-				DDNSNode node = nodeLookup(name);
+				node = nodeLookup(name);
 				DDNSRRecord record = node.getRecord();
 				
-				if(record.type() == RRType.RRTYPE_CNAME) {
-					JSONObject nodeJSON = record.marshall();
-					nodeJSON.put("name", node.getName());
-					
-					resultJSON.put("node", nodeJSON);
-					resultJSON.put("done", false);
-				} else { 
-					String pw = args.getString("password");
-					
-					if(record.type() == RRType.RRTYPE_NS){
-						if(node.getName().equals(name))
-							node.unregister(pw);
-						
-						JSONObject nodeJSON = record.marshall();
-						nodeJSON.put("name", node.getName());
-						
-						resultJSON.put("node", nodeJSON);
-						resultJSON.put("done", false);
-					} else { //A or SOA
-						node.unregister(pw);
-						resultJSON.put("done", true);
-					}
-				}
+				if(node.getName().equals(name))
+					node.unregister(pw);
+				
+				recordType = record.type();
+				
+				nodeJSON = record.marshall();
+				nodeJSON.put("name", node.getName());	
+			}
+			
+			if(recordType == RRType.RRTYPE_CNAME) {
+				resultJSON.put("node", nodeJSON);
+				resultJSON.put("done", false);
+			} else if(recordType == RRType.RRTYPE_NS) {
+				resultJSON.put("node", nodeJSON);
+				resultJSON.put("done", false);
+			} else { //A or SOA
+				resultJSON.put("done", true);
 			}
 			resultJSON.put("resulttype", "unregisterresult");
 		} catch(DDNSException e) {
 			resultJSON = ddnsexceptionToJSON(e);
+		} catch(JSONException e) {
+			resultJSON = ddnsexceptionToJSON(new DDNSRuntimeException(e.getMessage()));
 		}
 			
 		return resultJSON;
@@ -249,51 +233,44 @@ public class DDNSService extends NetLoadableService implements HTTPProviderInter
 	 * @throws JSONException 
 	 * @throws DDNSException 
 	 */
-	public JSONObject _rpcRegister(JSONObject args) throws JSONException {
+	public JSONObject _rpcRegister(JSONObject args)  {
 		JSONObject resultJSON = new JSONObject();
-		String name = args.getString("name");
 		
 		try {
+			DDNSFullNameInterface name = new DDNSFullName(args.getString("name"));
+			String ip = args.getString("ip");
+			int port = args.getInt("port");
+			String pw = args.getString("password");
+			
+			DDNSNode node;
+			RRType recordType;
+			JSONObject nodeJSON;
 			synchronized(this) {
-				DDNSNode node = nodeLookup(name);
+				node = nodeLookup(name);
 				DDNSRRecord record = node.getRecord();
+				if(node.getName().equals(name))
+					node.register(ip, port, pw);
 				
-				if(record.type() == RRType.RRTYPE_CNAME) {
-					JSONObject nodeJSON = record.marshall();
-					nodeJSON.put("name", node.getName());
-					
-					resultJSON.put("node", nodeJSON);
-					resultJSON.put("done", false);
-				} else { 
-					String ip = args.getString("ip");
-					int port = args.getInt("port");
-					String pw = args.getString("password");
-					
-					if(record.type() == RRType.RRTYPE_NS){
-						if(node.getName().equals(name))
-							node.register(ip, port, pw);
-						
-						JSONObject nodeJSON = record.marshall();
-						nodeJSON.put("name", node.getName());
-						
-						resultJSON.put("node", nodeJSON);
-						resultJSON.put("done", false);
-						resultJSON.put("lifetime", DDNSNode.REG_LIFETIME);
-					} else { //A or SOA
-						node.register(ip, port, pw);
-						
-						JSONObject nodeJSON = record.marshall();
-						nodeJSON.put("name", node.getName());
-						
-						resultJSON.put("node", nodeJSON);
-						resultJSON.put("done", true);
-						resultJSON.put("lifetime", DDNSNode.REG_LIFETIME);
-					}
-				}
+				nodeJSON = record.marshall();
+				nodeJSON.put("name", node.getName());
+				recordType = record.type();
+			}
+			
+			resultJSON.put("node", nodeJSON);
+			if(recordType == RRType.RRTYPE_CNAME) {
+				resultJSON.put("done", false);
+			} else if(recordType == RRType.RRTYPE_NS) {
+				resultJSON.put("done", false);
+				resultJSON.put("lifetime", DDNSNode.REG_LIFETIME);
+			} else { //A or SOA
+				resultJSON.put("done", true);
+				resultJSON.put("lifetime", DDNSNode.REG_LIFETIME);
 			}
 			resultJSON.put("resulttype", "registerresult");
 		} catch(DDNSException e) {
 			resultJSON = ddnsexceptionToJSON(e);
+		} catch(JSONException e) {
+			resultJSON = ddnsexceptionToJSON(new DDNSRuntimeException(e.getMessage()));
 		}
 		return resultJSON;
 	}
@@ -306,10 +283,11 @@ public class DDNSService extends NetLoadableService implements HTTPProviderInter
 	 * @throws DDNSException 
 	 * @throws JSONException 
 	 */
-	public JSONObject _rpcResolve(JSONObject args) throws JSONException {
+	public JSONObject _rpcResolve(JSONObject args) {
 		JSONObject resultJSON = new JSONObject();
-		String name = args.getString("name");
 		try {
+			DDNSFullNameInterface name = new DDNSFullName(args.getString("name"));
+		
 			synchronized(this) {
 				DDNSNode node = nodeLookup(name);
 				DDNSRRecord record = node.getRecord();
@@ -321,31 +299,39 @@ public class DDNSService extends NetLoadableService implements HTTPProviderInter
 					resultJSON.put("done", false);
 				} else if(record.type() == RRType.RRTYPE_NS){
 					if(!node.isValid())
-						throw new DDNSNoAddressException(new DDNSFullName(name));
+						throw new DDNSNoAddressException(name);
 					resultJSON.put("done", false);
 				} else { //A or SOA
 					if(!node.isValid())
-						throw new DDNSNoAddressException(new DDNSFullName(name));
+						throw new DDNSNoAddressException(name);
 					resultJSON.put("done", true);
 				}	
 			}
 			resultJSON.put("resulttype", "resolveresult");
 		} catch(DDNSException e) {
 			resultJSON = ddnsexceptionToJSON(e);
+		} catch(JSONException e) {
+			resultJSON = ddnsexceptionToJSON(new DDNSRuntimeException(e.getMessage()));
 		}
+		
 		return resultJSON;
 	}
 
-	private DDNSNode nodeLookup(String name) throws DDNSException {
+	private DDNSNode nodeLookup(DDNSFullNameInterface name) throws DDNSException {
 		return nodeLookup(name, false);
 	}
 	
-	private DDNSNode nodeLookup(String name, boolean suppressNoAddressErrors) throws DDNSException {
-		if(!name.endsWith(mRoot.getName())) {
-			DDNSFullNameInterface nodeName = new DDNSFullName(name);
-			DDNSFullNameInterface zoneName = new DDNSFullName(mRoot.getName());
-			throw new DDNSZoneException(nodeName, zoneName);
+	private DDNSNode nodeLookup(DDNSFullNameInterface name, boolean suppressNoAddressErrors) throws DDNSException {
+		DDNSFullNameInterface curAncestor = name;
+		DDNSFullNameInterface emptyName = new DDNSFullName("");
+		while(curAncestor != null && !curAncestor.equals(emptyName)) {
+			if(curAncestor.equals(mRoot.getName()))
+				break;
+			curAncestor = curAncestor.parent();
 		}
+		
+		if(curAncestor == null || curAncestor.equals(emptyName))
+			throw new DDNSZoneException(name, mRoot.getName());
 
 		
 		DDNSNode curNode = mRoot;
@@ -355,7 +341,7 @@ public class DDNSService extends NetLoadableService implements HTTPProviderInter
 					(curRecord.type() == RRType.RRTYPE_A ||
 					curRecord.type() == RRType.RRTYPE_SOA)) { //resolved to A or SOA
 				if(!suppressNoAddressErrors && !curNode.isValid()) {
-					throw new DDNSNoAddressException(new DDNSFullName(name));
+					throw new DDNSNoAddressException(name);
 				}
 				return curNode;
 
@@ -364,17 +350,19 @@ public class DDNSService extends NetLoadableService implements HTTPProviderInter
 
 			} else if(curRecord.type() == RRType.RRTYPE_NS) { //reached NS
 				if(!suppressNoAddressErrors && !curNode.isValid()) {
-					throw new DDNSNoAddressException(new DDNSFullName(name));
+					throw new DDNSNoAddressException(name);
 				}
 				return curNode;
 			}
 			
-			int decimalIndex = name.lastIndexOf('.', name.length() - curNode.getName().length() - 2)+1;
-			String childName = name.substring(decimalIndex);
+			DDNSFullNameInterface childName = name;
+			while(!childName.parent().equals(curNode.getName())) {
+				childName = childName.parent();
+			}
 			curNode = curNode.getChild(childName);
 		}
 
-		throw new DDNSNoSuchNameException(new DDNSFullName(name));
+		throw new DDNSNoSuchNameException(name);
 	}
 
 	private JSONObject ddnsexceptionToJSON(DDNSException ex) {
@@ -427,13 +415,13 @@ public class DDNSService extends NetLoadableService implements HTTPProviderInter
 	//---------------------------------------------------------------------------
 	private static class DDNSNode {
 		public static final int REG_LIFETIME = NetBase.theNetBase().config().getAsInt("ddns.registerlifetime", 15, TAG); //seconds
-		private String nFullname;
+		private DDNSFullNameInterface nFullname;
 		private String nPassword;
 		private DDNSRRecord nRecord;
 		private long nDieAt; //die at this time, time in millis
-		private Map<String, DDNSNode> nChildren = new HashMap<String, DDNSNode>();
+		private Map<DDNSFullNameInterface, DDNSNode> nChildren = new HashMap<DDNSFullNameInterface, DDNSNode>();
 
-		public DDNSNode(String fullname, String pw, DDNSRRecord record) { 
+		public DDNSNode(DDNSFullNameInterface fullname, String pw, DDNSRRecord record) { 
 			nFullname = fullname;
 			nRecord = record;
 			nDieAt =  System.currentTimeMillis() + REG_LIFETIME*1000;
@@ -444,15 +432,15 @@ public class DDNSService extends NetLoadableService implements HTTPProviderInter
 			nChildren.put(child.getName(), child);
 		}
 
-		public String getName() {
+		public DDNSFullNameInterface getName() {
 			return nFullname;
 		}
 
-		public boolean hasChild(String childName) {
+		public boolean hasChild(DDNSFullNameInterface childName) {
 			return nChildren.containsKey(childName);
 		}
 
-		public DDNSNode getChild(String childName) {
+		public DDNSNode getChild(DDNSFullNameInterface childName) {
 			return nChildren.get(childName);
 		}
 
@@ -463,20 +451,16 @@ public class DDNSService extends NetLoadableService implements HTTPProviderInter
 		}
 
 		public void register(String ip, int port, String pw) throws DDNSException {
-			if(!pw.equals(nPassword))
-				throw new DDNSAuthorizationException(new DDNSFullName(nFullname));
-			else if(!(nRecord instanceof ARecord))
-				throw new DDNSRuntimeException("Cannot register CNAME Record");
-			((ARecord) nRecord).updateAddress(ip, port);
-			nDieAt = System.currentTimeMillis() + REG_LIFETIME*1000;
+			if(!pw.equals(nPassword)) {
+				throw new DDNSAuthorizationException(nFullname);
+			} else if(nRecord instanceof ARecord) {
+				((ARecord) nRecord).updateAddress(ip, port);
+				nDieAt = System.currentTimeMillis() + REG_LIFETIME*1000;
+			}
 		}
 		
 		public void unregister(String pw) throws DDNSException {
-			if(!pw.equals(nPassword))
-				throw new DDNSAuthorizationException(new DDNSFullName(nFullname));
-			else if(!(nRecord instanceof ARecord))
-				throw new DDNSRuntimeException("Cannot unregister CNAME Record");
-			((ARecord) nRecord).updateAddress(null, -1);
+			this.register(null, -1, pw);
 		}
 		
 		public boolean isValid() {
@@ -496,10 +480,9 @@ public class DDNSService extends NetLoadableService implements HTTPProviderInter
 				result.put("Password", this.nPassword);
 				result.put("Record", this.getRecord());
 				if(this.nChildren.size() > 0) {
-					int i = 1;
 					JSONArray children = new JSONArray();
-					for(String child : nChildren.keySet()) {
-						children.put(child);
+					for(DDNSFullNameInterface child : nChildren.keySet()) {
+						children.put(child.toString());
 					}
 					result.put("Children", children);
 				} else {
