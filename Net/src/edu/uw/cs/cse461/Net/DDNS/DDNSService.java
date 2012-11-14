@@ -1,6 +1,8 @@
 package edu.uw.cs.cse461.Net.DDNS;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import org.json.JSONArray;
@@ -322,6 +324,7 @@ public class DDNSService extends NetLoadableService implements HTTPProviderInter
 	}
 	
 	private DDNSNode nodeLookup(DDNSFullNameInterface name, boolean suppressNoAddressErrors) throws DDNSException {
+		
 		DDNSFullNameInterface curAncestor = name;
 		DDNSFullNameInterface emptyName = new DDNSFullName("");
 		while(curAncestor != null && !curAncestor.equals(emptyName)) {
@@ -336,6 +339,7 @@ public class DDNSService extends NetLoadableService implements HTTPProviderInter
 		
 		DDNSNode curNode = mRoot;
 		while(curNode != null) {
+			
 			DDNSRRecord curRecord = curNode.getRecord();
 			if(curNode.getName().equals(name) &&
 					(curRecord.type() == RRType.RRTYPE_A ||
@@ -476,7 +480,7 @@ public class DDNSService extends NetLoadableService implements HTTPProviderInter
 		public String toString() {
 			try {
 				JSONObject result = new JSONObject();
-				result.put("Fullname", this.getName());
+				result.put("Fullname", this.getName().toString());
 				result.put("Password", this.nPassword);
 				result.put("Record", this.getRecord());
 				if(this.nChildren.size() > 0) {
@@ -490,7 +494,7 @@ public class DDNSService extends NetLoadableService implements HTTPProviderInter
 				}
 				return result.toString();
 			} catch(JSONException e) {
-				//shouldn't happen
+				e.printStackTrace();
 			}
 			return null;
 		}
