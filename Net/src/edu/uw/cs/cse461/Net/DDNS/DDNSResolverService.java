@@ -19,6 +19,7 @@ import edu.uw.cs.cse461.Net.Base.NetLoadable.NetLoadableService;
 import edu.uw.cs.cse461.Net.DDNS.DDNSRRecord.ARecord;
 import edu.uw.cs.cse461.Net.RPC.RPCCall;
 import edu.uw.cs.cse461.util.ConfigManager;
+import edu.uw.cs.cse461.util.IPFinder;
 
 
 public class DDNSResolverService extends NetLoadableService implements HTTPProviderInterface, DDNSResolverServiceInterface {
@@ -38,17 +39,11 @@ public class DDNSResolverService extends NetLoadableService implements HTTPProvi
 	
 	private Timer timer;					/* timer for scheduling events */
 
-	// TODO : make missing config file entries require user input?
 	public DDNSResolverService() throws DDNSException {
 		super("ddnsresolver", true);
 		
 		// set "my" IP 
-		try {
-			InetAddress myaddr = InetAddress.getLocalHost();
-			myIP = myaddr.getHostAddress();
-		} catch (UnknownHostException e) {
-			throw new DDNSException("Unable to determine local host IP.");
-		}
+		myIP = IPFinder.getMyIP();
 		
 		// set up root server ip and port
 		ConfigManager config = NetBase.theNetBase().config();
@@ -89,10 +84,10 @@ public class DDNSResolverService extends NetLoadableService implements HTTPProvi
 		// for scheduling new tasks
 		timer = new Timer();
 		
-		
 		// finally - REGISTER OURSELVES
-		// get port (just use rootPort??) and name
-		// register(myName, rootPort);
+		int port = Integer.parseInt(config.getProperty("rpc.port"));
+		myName = config.getProperty("net.hostname");
+		register(new DDNSFullName(myName), port);
 	}
 	
 	
@@ -105,7 +100,13 @@ public class DDNSResolverService extends NetLoadableService implements HTTPProvi
 		timer.cancel();
 		
 		// UNregister ourselves
-		// unregister(myName);
+		try {
+			unregister(new DDNSFullName(myName));
+		} catch (DDNSException e) {
+			// do nothing	
+		} catch (JSONException e) {
+			// do nothing
+		}
 		super.shutdown();
 	}
 		
@@ -144,7 +145,7 @@ public class DDNSResolverService extends NetLoadableService implements HTTPProvi
 			unregisterObj.put("password", password);
 
 			// send to RPC		
-			JSONObject response = resolverHelper("unregister", rootServerIP, rootPort, unregisterObj, 0);
+			JSONObject response = resolverHelper(name.toString(), "unregister", rootServerIP, rootPort, unregisterObj, 0);
 			
 			// if the response was an error, then process that
 			// TODO: handle each error type differently?
@@ -179,7 +180,7 @@ public class DDNSResolverService extends NetLoadableService implements HTTPProvi
 			registerObj.put("password", password);
 			
 			// send to RPC		
-			JSONObject response = resolverHelper("register", rootServerIP, rootPort, registerObj, 0);
+			JSONObject response = resolverHelper(name.toString(), "register", rootServerIP, rootPort, registerObj, 0);
 			
 			// process response
 			// TODO: handle each error type differently?
@@ -222,7 +223,7 @@ public class DDNSResolverService extends NetLoadableService implements HTTPProvi
 			// create JSON object to send to RPC
 			JSONObject resolveObj = new JSONObject();
 			resolveObj.put("name", nameStr);
-			JSONObject response = resolverHelper("resolve", rootServerIP, rootPort, resolveObj, 0);
+			JSONObject response = resolverHelper(nameStr, "resolve", rootServerIP, rootPort, resolveObj, 0);
 
 			// TODO : handle each error differently?
 			if (response.getString("resulttype").equals("ddnsexception")) {	// FAILURE
@@ -248,7 +249,7 @@ public class DDNSResolverService extends NetLoadableService implements HTTPProvi
 	 * Returns the JSONObject returned by the requested RPC method call. 
 	 * (This object will either indicate an error, or give the ip/port of the requested name)
 	 */
-	private JSONObject resolverHelper(String rpccall, String serviceIP, int servicePort, JSONObject obj, int attempts) 
+	private JSONObject resolverHelper(String name, String rpccall, String serviceIP, int servicePort, JSONObject obj, int attempts) 
 																						throws DDNSException, JSONException, IOException {
 		if (attempts >= maxResolveAttempts) {
 			throw new DDNSException("Unable to " + rpccall + " requested name. Reached max # of attempts.");
@@ -264,8 +265,12 @@ public class DDNSResolverService extends NetLoadableService implements HTTPProvi
 		JSONObject node = response.getJSONObject("node");
 		String nodeType = node.getString("type");
 		if (nodeType.equals("CNAME")) {
-			// start resolving the alias at the root
-			obj.put("name", node.getString("alias"));
+			String nameToReplace = node.getString("name");
+			String alias = node.getString("alias");
+			
+			// TODO: verify this works!
+			name = name.substring(0, name.indexOf(nameToReplace)) + alias;
+			obj.put("name", name);
 			newIP = rootServerIP;
 			newPort = rootPort;
 		} else {
@@ -274,7 +279,7 @@ public class DDNSResolverService extends NetLoadableService implements HTTPProvi
 			newIP = node.getString("ip");
 			newPort = node.getInt("port");
 		}
-		return resolverHelper(rpccall, newIP, newPort, obj, attempts+1);
+		return resolverHelper(name, rpccall, newIP, newPort, obj, attempts+1);
 	}
 
 	
