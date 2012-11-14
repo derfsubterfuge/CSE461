@@ -85,7 +85,7 @@ public class DDNSResolverService extends NetLoadableService implements HTTPProvi
 		timer = new Timer();
 		
 		// finally - REGISTER OURSELVES
-		int port = Integer.parseInt(config.getProperty("rpc.port"));
+		int port = Integer.parseInt(config.getProperty("rpc.serverport"));
 		myName = config.getProperty("net.hostname");
 		register(new DDNSFullName(myName), port);
 	}
@@ -137,11 +137,11 @@ public class DDNSResolverService extends NetLoadableService implements HTTPProvi
 	 * @throws DDNSException
 	 */
 	@Override
-	public void unregister(DDNSFullNameInterface name) throws DDNSException, JSONException {	
+	public void unregister(DDNSFullNameInterface name) throws DDNSException, JSONException {			
 		// create JSON object to send to RPC
 		JSONObject unregisterObj = new JSONObject();
 		try {
-			unregisterObj.put("name", name);
+			unregisterObj.put("name", name.toString());
 			unregisterObj.put("password", password);
 
 			// send to RPC		
@@ -150,6 +150,8 @@ public class DDNSResolverService extends NetLoadableService implements HTTPProvi
 			// if the response was an error, then process that
 			// TODO: handle each error type differently?
 			if (response.get("resulttype").equals("ddnsexception")) {
+				// TODO: add retries, keep trying for 10 seconds, if still fails then throw exception		
+
 				throw new DDNSException(response.getString("message"));
 			} 
 			// else everything is A-OK and we are done, let's update the cache to reflect that this name doesn't have address anymore
@@ -174,7 +176,7 @@ public class DDNSResolverService extends NetLoadableService implements HTTPProvi
 		// create JSON object to send to RPC
 		JSONObject registerObj = new JSONObject();
 		try {
-			registerObj.put("name", name);
+			registerObj.put("name", name.toString());
 			registerObj.put("ip", myIP);
 			registerObj.put("port", port);
 			registerObj.put("password", password);
@@ -185,11 +187,13 @@ public class DDNSResolverService extends NetLoadableService implements HTTPProvi
 			// process response
 			// TODO: handle each error type differently?
 			if (response.get("resulttype").equals("ddnsexception")) {	// FAILURE
+				// TODO: add retries, keep trying for 10 seconds, if still fails then throw exception		
+
 				cachePut(name.toString(), null);						// record failure in cache
 				throw new DDNSException(response.getString("message"));
 			} else {													// SUCCESS
 				int timeToLive = response.getInt("lifetime");
-				timer.schedule(new RegisterTask(name, port), timeToLive);
+				timer.schedule(new RegisterTask(name, port), Math.max(90*timeToLive/100,500));
 			}
 		} catch (JSONException e) {
 			throw new DDNSException("register encountered a JSON exception: " + e.getMessage());
@@ -231,6 +235,7 @@ public class DDNSResolverService extends NetLoadableService implements HTTPProvi
 				throw new DDNSException(response.getString("message"));
 			} else {  														// SUCCESS
 				JSONObject node = response.getJSONObject("node");
+				// either A or SOA
 				ARecord result = (ARecord) DDNSRRecord.unmarshall(node);
 				cachePut(nameStr, result);									// record success in cache
 				return result;
