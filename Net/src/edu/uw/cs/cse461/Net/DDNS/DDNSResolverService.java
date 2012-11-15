@@ -17,6 +17,7 @@ import edu.uw.cs.cse461.HTTP.HTTPProviderInterface;
 import edu.uw.cs.cse461.Net.Base.NetBase;
 import edu.uw.cs.cse461.Net.Base.NetLoadable.NetLoadableService;
 import edu.uw.cs.cse461.Net.DDNS.DDNSRRecord.ARecord;
+import edu.uw.cs.cse461.Net.DDNS.DDNSRRecord.SOARecord;
 import edu.uw.cs.cse461.Net.RPC.RPCCall;
 import edu.uw.cs.cse461.util.ConfigManager;
 import edu.uw.cs.cse461.util.IPFinder;
@@ -25,19 +26,19 @@ import edu.uw.cs.cse461.util.IPFinder;
 public class DDNSResolverService extends NetLoadableService implements HTTPProviderInterface, DDNSResolverServiceInterface {
 	private static String TAG="DDNSResolverService";
 	
-	private String myIP;					/* the IP of the machine currently running this resolver */
-	private String myName;					/* name of the machine currently running this resolver */
-	private String password;				/* the password to use when registering/unregistering names */
-	private int maxResolveAttempts; 		/* the max number of rpc calls to make in attempt to resolve a name (to prevent loops) */
+	private String myIP;						/* the IP of the machine currently running this resolver */
+	private String myName;						/* name of the machine currently running this resolver */
+	private String password;					/* the password to use when registering/unregistering names */
+	private int maxResolveAttempts; 			/* the max number of rpc calls to make in attempt to resolve a name (to prevent loops) */
 	
-	private String rootServerIP;			/* the IP of the root server to contact when resolving names */
-	private int rootPort;					/* the port of the root server to contact when resolving names */
-
-	boolean hasCaching;						/* whether or not caching has been turned on */
-	int cacheTimeout;						/* how long to wait before booting elements out of the cache */
-	private Map<String, ARecord> cache;		/* a cache of resolved names -> IP/ports, an invalid/unregistered name maps to NULL */
+	private String rootServerIP;				/* the IP of the root server to contact when resolving names */
+	private int rootPort;						/* the port of the root server to contact when resolving names */
 	
-	private Timer timer;					/* timer for scheduling events */
+	boolean hasCaching;							/* whether or not caching has been turned on */
+	int cacheTimeout;							/* how long to wait before booting elements out of the cache */
+	private Map<String, CacheRecord> cache;		/* a cache of resolved names -> IP/ports, an invalid/unregistered name maps to NULL */
+	
+	private Timer timer;						/* timer for scheduling events */
 
 	public DDNSResolverService() throws DDNSException {
 		super("ddnsresolver", true);
@@ -66,7 +67,7 @@ public class DDNSResolverService extends NetLoadableService implements HTTPProvi
 		if (cacheTimeout > 0) {
 			hasCaching = true;
 		}
-		cache = new HashMap<String, ARecord>();
+		cache = new HashMap<String, CacheRecord>();
 		
 		// setup password
 		password = config.getProperty("ddnsresolver.password");
@@ -137,7 +138,10 @@ public class DDNSResolverService extends NetLoadableService implements HTTPProvi
 	 * @throws DDNSException
 	 */
 	@Override
-	public void unregister(DDNSFullNameInterface name) throws DDNSException, JSONException {			
+	public void unregister(DDNSFullNameInterface name) throws DDNSException, JSONException {
+		// record in cache that there is no address associated with this name anymore
+		cachePutLocal(name.toString(), new CacheRecord(new DDNSException.DDNSNoAddressException(name)));
+		
 		// create JSON object to send to RPC
 		JSONObject unregisterObj = new JSONObject();
 		try {
@@ -148,14 +152,32 @@ public class DDNSResolverService extends NetLoadableService implements HTTPProvi
 			JSONObject response = resolverHelper(name.toString(), "unregister", rootServerIP, rootPort, unregisterObj, 0);
 			
 			// if the response was an error, then process that
-			// TODO: handle each error type differently?
 			if (response.get("resulttype").equals("ddnsexception")) {
-				// TODO: add retries, keep trying for 10 seconds, if still fails then throw exception		
-
+				int exceptiontype = response.getInt("exceptionnum");
+				switch(exceptiontype) {
+				case 1: 
+					// record as invalid name in cache
+					CacheRecord badRecord = new CacheRecord(new DDNSException.DDNSNoSuchNameException(name));
+					cachePutLocal(name.toString(), badRecord);
+					throw new DDNSException.DDNSNoSuchNameException(name);
+				case 2: 
+					// already recorded above
+					throw new DDNSException.DDNSNoAddressException(name);
+				case 3:
+					throw new DDNSException.DDNSAuthorizationException(name);
+				case 4: 
+					// TODO: add retries, keep trying for 10 seconds, if still fails then throw exception		
+					break;
+				case 5: 
+					throw new DDNSException.DDNSTTLExpiredException(name);
+				case 6:
+					throw new DDNSException.DDNSZoneException(name, new DDNSFullName(response.getString("zone")));
+				default:
+					break;				
+				}
 				throw new DDNSException(response.getString("message"));
 			} 
-			// else everything is A-OK and we are done, let's update the cache to reflect that this name doesn't have address anymore
-			cachePut(name.toString(), null);
+			// else everything is A-OK and we are done
 		} catch (JSONException e) {
 			throw new DDNSException("unregister encountered a JSON exception: " + e.getMessage());
 		} catch (IOException e) {
@@ -172,7 +194,12 @@ public class DDNSResolverService extends NetLoadableService implements HTTPProvi
 	 * @throws DDNSException
 	 */
 	@Override
-	public void register(DDNSFullNameInterface name, int port) throws DDNSException {		
+	public void register(DDNSFullNameInterface name, int port) throws DDNSException {
+		// want to record in cache even if it fails
+		ARecord record = new ARecord(myIP, port);
+		CacheRecord cacherecord = new CacheRecord(record, new RegisterTask(name, port), true);
+		cachePutLocal(name.toString(), cacherecord);
+		
 		// create JSON object to send to RPC
 		JSONObject registerObj = new JSONObject();
 		try {
@@ -185,15 +212,33 @@ public class DDNSResolverService extends NetLoadableService implements HTTPProvi
 			JSONObject response = resolverHelper(name.toString(), "register", rootServerIP, rootPort, registerObj, 0);
 			
 			// process response
-			// TODO: handle each error type differently?
 			if (response.get("resulttype").equals("ddnsexception")) {	// FAILURE
-				// TODO: add retries, keep trying for 10 seconds, if still fails then throw exception		
-
-				cachePut(name.toString(), null);						// record failure in cache
-				throw new DDNSException(response.getString("message"));
+				int exceptiontype = response.getInt("exceptionnum");
+				switch(exceptiontype) {
+				case 1:
+					CacheRecord badrecord1 = new CacheRecord(new DDNSException.DDNSNoSuchNameException(name));
+					cachePutLocal(name.toString(), badrecord1);
+					throw new DDNSException.DDNSNoSuchNameException(name);
+				case 2: 
+					// should never get this kind of error as a response to register
+					CacheRecord badrecord2 = new CacheRecord(new DDNSException.DDNSNoAddressException(name));
+					cachePutLocal(name.toString(), badrecord2);
+					throw new DDNSException.DDNSNoAddressException(name);
+				case 3:
+					throw new DDNSException.DDNSAuthorizationException(name);
+				case 4: 
+					// TODO: add retries, keep trying for 10 seconds, if still fails then throw exception		
+					break;
+				case 5: 
+					throw new DDNSException.DDNSTTLExpiredException(name);
+				case 6:
+					throw new DDNSException.DDNSZoneException(name, new DDNSFullName(response.getString("zone")));
+				default:
+					throw new DDNSException(response.getString("message"));				
+				}
 			} else {													// SUCCESS
 				int timeToLive = response.getInt("lifetime");
-				timer.schedule(new RegisterTask(name, port), Math.max(90*timeToLive/100,500));
+				cacherecord.scheduleRegistration(Math.max(90*timeToLive/100,500));
 			}
 		} catch (JSONException e) {
 			throw new DDNSException("register encountered a JSON exception: " + e.getMessage());
@@ -211,33 +256,52 @@ public class DDNSResolverService extends NetLoadableService implements HTTPProvi
 	@Override
 	public ARecord resolve(String nameStr) throws DDNSException, JSONException {
 		// check cache first
-		if (hasCaching) {
-			synchronized (cache) {
-				if (cache.containsKey(nameStr)) {
-					ARecord result = cache.get(nameStr);
-					if (result == null) {
-						throw new DDNSException("unable to resolve name: " + nameStr);
-					}
-					return result;
-				}
+		synchronized (cache) {
+			if (cache.containsKey(nameStr)) {
+				return cache.get(nameStr).getRecord();
 			}
 		}
-		
+
 		try {
 			// create JSON object to send to RPC
 			JSONObject resolveObj = new JSONObject();
 			resolveObj.put("name", nameStr);
 			JSONObject response = resolverHelper(nameStr, "resolve", rootServerIP, rootPort, resolveObj, 0);
 
-			// TODO : handle each error differently?
 			if (response.getString("resulttype").equals("ddnsexception")) {	// FAILURE
-				cachePut(nameStr, null);									// record failure in cache
-				throw new DDNSException(response.getString("message"));
+				int exceptiontype = response.getInt("exceptionnum");
+				switch(exceptiontype) {
+				case 1:
+					// record invalid name in cache
+					CacheRecord badrecord1 = new CacheRecord(new DDNSException.DDNSNoSuchNameException(new DDNSFullName(nameStr)), new CacheTask(nameStr));
+					cachePutGlobal(nameStr, badrecord1);
+					throw new DDNSException.DDNSNoSuchNameException(new DDNSFullName(nameStr));
+				case 2: 
+					// record no address in cache
+					CacheRecord badrecord2 = new CacheRecord(new DDNSException.DDNSNoAddressException(new DDNSFullName(nameStr)), new CacheTask(nameStr));
+					cachePutGlobal(nameStr, badrecord2);
+					throw new DDNSException.DDNSNoAddressException(new DDNSFullName(nameStr));
+				case 3:
+					throw new DDNSException.DDNSAuthorizationException(new DDNSFullName(nameStr));
+				case 4: 
+					// TODO: try again for 10 seconds;
+					return null;
+				case 5: 
+					throw new DDNSException.DDNSTTLExpiredException(new DDNSFullName(nameStr));
+				case 6:
+					throw new DDNSException.DDNSZoneException(new DDNSFullName(nameStr), new DDNSFullName(response.getString("zone")));
+				default:
+					throw new DDNSException(response.getString("message"));
+				}
 			} else {  														// SUCCESS
 				JSONObject node = response.getJSONObject("node");
 				// either A or SOA
+				if (node.getString("type").equals("SOA")) {
+					SOARecord result = (SOARecord) DDNSRRecord.unmarshall(node);
+					return result;
+				}
+				// if wasn't SOA return A 
 				ARecord result = (ARecord) DDNSRRecord.unmarshall(node);
-				cachePut(nameStr, result);									// record success in cache
 				return result;
 			}
 		} catch (IOException e) {
@@ -294,13 +358,19 @@ public class DDNSResolverService extends NetLoadableService implements HTTPProvi
 	}
 	
 	
+	private void cachePutLocal(String name, CacheRecord record) {
+		synchronized (cache) {
+			cache.put(name, record);
+		}
+	}
+	
 	// Adds the given name -> ip&port mapping to the cache 
-	private void cachePut(String name, ARecord record) {
+	private void cachePutGlobal(String name, CacheRecord record) {
 		if (hasCaching) {
 			synchronized (cache) {
-				cache.put(name, record);	// record unsuccessful attempt to resolve this name
+				cache.put(name, record);
 			}
-			timer.schedule(new CacheTask(name), cacheTimeout);
+			record.scheduleCacheRemoval();
 		}
 	}
 	
@@ -342,6 +412,76 @@ public class DDNSResolverService extends NetLoadableService implements HTTPProvi
 			} catch (DDNSException e) {
 				// what to do here??
 			}
+		}
+		
+	}
+	
+	
+	private class CacheRecord {
+		private ARecord nRecord;			/* the ARecord/SOARecord this CacheRecord represents */
+		private DDNSException nException;	/* used to indicate that this record represents either nosuchname or noaddress */
+		private TimerTask nTask;				/* used to re-register local records, or remove global records from the cache */
+		private boolean nLocal;			/* indicator of whether or not this record represents a local name/address */
+		
+		/* Constructs a record to associate with a legal name
+		 * TimerTask will be a CacheTask for a global entry, or a RegisterTask if this is a local entry
+		 */
+		public CacheRecord(ARecord record, TimerTask task, boolean isLocal) {
+			nRecord = record;
+			nTask = task;
+			nLocal = isLocal;
+		}
+		
+		/* Constructs a record to associate with an invalid name, or one that has no address. 
+		 * Intended for use with global entries (still need a TimerTask in order to remove from the cache)
+		 * isLocal is set to false when using this constructor.
+		 */
+		public CacheRecord(DDNSException ex, TimerTask cachetask) {
+			nRecord = null;
+			nLocal = false;
+			nException = ex;
+			nTask = cachetask;
+		}
+		
+		/* Constructs a record to associate with an invalid name, or one that has no address.
+		 * Intended for use with local entries (local entries are never removed from the cache, and if they are invalid shouldn't reregister).
+		 * isLocal is set to true when using this constructor.
+		 */
+		public CacheRecord(DDNSException ex) {
+			nRecord = null;
+			nTask = null;
+			nLocal = true;
+			nException = ex;
+		}
+		
+		/* returns the record containing the IP and port */
+		public ARecord getRecord() throws DDNSException {
+			if (nException != null)
+				throw nException;
+			return nRecord;
+		}
+		
+		/* returns true if this represents a local record, false otherwise */
+		public boolean isLocal() {
+			return nLocal;
+		}
+		
+		/* trusts that the timertask associated with this record is for registration, and cancels it */
+		public void cancelRegistration() {
+			if (nTask != null) {
+				nTask.cancel();
+			}
+		}
+		
+		/* trusts that the timertask is for registration, and schedules it to reregister */
+		public void scheduleRegistration(long delay) {
+			if (nTask != null) 
+				timer.schedule(nTask, delay);
+		}
+		
+		public void scheduleCacheRemoval() {
+			if (nTask != null)
+				timer.schedule(nTask, cacheTimeout);
 		}
 		
 	}
