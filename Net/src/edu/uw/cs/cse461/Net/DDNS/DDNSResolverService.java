@@ -19,6 +19,7 @@ import edu.uw.cs.cse461.Net.Base.NetLoadable.NetLoadableService;
 import edu.uw.cs.cse461.Net.DDNS.DDNSRRecord.ARecord;
 import edu.uw.cs.cse461.Net.DDNS.DDNSRRecord.SOARecord;
 import edu.uw.cs.cse461.Net.RPC.RPCCall;
+import edu.uw.cs.cse461.Net.RPC.RPCServiceInterface;
 import edu.uw.cs.cse461.util.ConfigManager;
 import edu.uw.cs.cse461.util.IPFinder;
 
@@ -59,7 +60,7 @@ public class DDNSResolverService extends NetLoadableService implements HTTPProvi
 		rootPort = Integer.parseInt(rport);
 		
 		// set up caching
-		String cachettl = config.getProperty("ddns.cachettl");
+		String cachettl = config.getProperty("ddnsresolver.cachettl");
 		if (cachettl == null) {
 			throw new DDNSException("No ddns.cachettl entry in config file.");
 		}
@@ -88,7 +89,7 @@ public class DDNSResolverService extends NetLoadableService implements HTTPProvi
 		// finally - REGISTER OURSELVES
 		int port = Integer.parseInt(config.getProperty("rpc.serverport"));
 		myName = config.getProperty("net.hostname");
-		register(new DDNSFullName(myName), port);
+		register(new DDNSFullName(myName), ((RPCServiceInterface)(NetBase.theNetBase().getService("rpc"))).localPort());
 	}
 	
 	
@@ -140,6 +141,9 @@ public class DDNSResolverService extends NetLoadableService implements HTTPProvi
 	@Override
 	public void unregister(DDNSFullNameInterface name) throws DDNSException, JSONException {
 		// record in cache that there is no address associated with this name anymore
+		if (cache.containsKey(name.toString())) {
+			cache.get(name.toString()).cancelRegistration();
+		}
 		cachePutLocal(name.toString(), new CacheRecord(new DDNSException.DDNSNoAddressException(name)));
 		
 		// create JSON object to send to RPC
@@ -294,6 +298,7 @@ public class DDNSResolverService extends NetLoadableService implements HTTPProvi
 					throw new DDNSException(response.getString("message"));
 				}
 			} else {  														// SUCCESS
+				// TODO: remove! System.out.println(response);
 				JSONObject node = response.getJSONObject("node");
 				// either A or SOA
 				if (node.getString("type").equals("SOA")) {
@@ -321,7 +326,7 @@ public class DDNSResolverService extends NetLoadableService implements HTTPProvi
 	private JSONObject resolverHelper(String name, String rpccall, String serviceIP, int servicePort, JSONObject obj, int attempts) 
 																						throws DDNSException, JSONException, IOException {
 		if (attempts >= maxResolveAttempts) {
-			throw new DDNSException("Unable to " + rpccall + " requested name. Reached max # of attempts.");
+			throw new DDNSException.DDNSTTLExpiredException(new DDNSFullName(name));
 		}
 	
 		JSONObject response = RPCCall.invoke(serviceIP, servicePort, "ddns", rpccall, obj);

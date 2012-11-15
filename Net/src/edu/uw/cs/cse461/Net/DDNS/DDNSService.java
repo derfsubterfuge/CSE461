@@ -248,7 +248,7 @@ public class DDNSService extends NetLoadableService implements HTTPProviderInter
 			RRType recordType;
 			JSONObject nodeJSON;
 			synchronized(this) {
-				node = nodeLookup(name);
+				node = nodeLookup(name, true);
 				DDNSRRecord record = node.getRecord();
 				if(node.getName().equals(name))
 					node.register(ip, port, pw);
