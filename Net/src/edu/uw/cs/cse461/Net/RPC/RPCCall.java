@@ -152,7 +152,7 @@ public class RPCCall extends NetLoadableService {
 			
 			// if this is an ERROR message, throw exception passing along the given error message
 			if (rpcReturn.getString("type").equals("ERROR"))
-				throw new IOException(rpcReturn.getString("message"));
+				throw new IOException(rpcReturn.getString("msg"));
 			// if its not an ERROR message must be OK 
 			if (!rpcReturn.getString("type").equals("OK"))
 				throw new IOException("Error invoking remote procedure.");

@@ -275,8 +275,8 @@ public class DDNSResolverService extends NetLoadableService implements HTTPProvi
 					throw new DDNSException(response.getString("message"));				
 				}
 			} else {													// SUCCESS
-				int timeToLive = response.getInt("lifetime");
-				cacherecord.scheduleRegistration(Math.max(90*timeToLive/100,500));
+				int timeToLive = 1000*response.getInt("lifetime");		// given in seconds, convert to ms
+				cacherecord.scheduleRegistration(Math.max((90*timeToLive/100),500));	// only wait 90% of timetolive before trying again (or half a second if ttl=0)
 			}
 		} catch (JSONException e) {
 			throw new DDNSException("register encountered a JSON exception: " + e.getMessage());
