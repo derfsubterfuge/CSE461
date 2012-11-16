@@ -288,14 +288,13 @@ public class DDNSService extends NetLoadableService implements HTTPProviderInter
 	public JSONObject _rpcResolve(JSONObject args) {
 		JSONObject resultJSON = new JSONObject();
 		try {
-			DDNSFullNameInterface name = new DDNSFullName(args.getString("name"));
-		
+			DDNSFullNameInterface name = new DDNSFullName(args.getString("name"));			
 			synchronized(this) {
 				DDNSNode node = nodeLookup(name);
 				DDNSRRecord record = node.getRecord();
-				
+
 				JSONObject nodeJSON = record.marshall();
-				nodeJSON.put("name", node.getName());
+				nodeJSON.put("name", node.getName().toString());			
 				resultJSON.put("node", nodeJSON);
 				if(record.type() == RRType.RRTYPE_CNAME) {
 					resultJSON.put("done", false);

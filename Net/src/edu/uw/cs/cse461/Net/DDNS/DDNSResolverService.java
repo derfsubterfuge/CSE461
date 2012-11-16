@@ -262,10 +262,11 @@ public class DDNSResolverService extends NetLoadableService implements HTTPProvi
 		// check cache first
 		synchronized (cache) {
 			if (cache.containsKey(nameStr)) {
+				System.out.println("found in cache!");
 				return cache.get(nameStr).getRecord();
 			}
 		}
-
+		
 		try {
 			// create JSON object to send to RPC
 			JSONObject resolveObj = new JSONObject();
@@ -298,7 +299,7 @@ public class DDNSResolverService extends NetLoadableService implements HTTPProvi
 					throw new DDNSException(response.getString("message"));
 				}
 			} else {  														// SUCCESS
-				// TODO: remove! System.out.println(response);
+				System.out.println(response);
 				JSONObject node = response.getJSONObject("node");
 				// either A or SOA
 				if (node.getString("type").equals("SOA")) {
@@ -324,12 +325,13 @@ public class DDNSResolverService extends NetLoadableService implements HTTPProvi
 	 * (This object will either indicate an error, or give the ip/port of the requested name)
 	 */
 	private JSONObject resolverHelper(String name, String rpccall, String serviceIP, int servicePort, JSONObject obj, int attempts) 
-																						throws DDNSException, JSONException, IOException {
+																						throws DDNSException, JSONException, IOException {		
 		if (attempts >= maxResolveAttempts) {
 			throw new DDNSException.DDNSTTLExpiredException(new DDNSFullName(name));
 		}
-	
+
 		JSONObject response = RPCCall.invoke(serviceIP, servicePort, "ddns", rpccall, obj);
+
 		if (response.getString("resulttype").equals("ddnsexception") || response.getBoolean("done")) {
 			return response;
 		}
@@ -341,15 +343,11 @@ public class DDNSResolverService extends NetLoadableService implements HTTPProvi
 		if (nodeType.equals("CNAME")) {
 			String nameToReplace = node.getString("name");
 			String alias = node.getString("alias");
-			
-			// TODO: verify this works!
 			name = name.substring(0, name.indexOf(nameToReplace)) + alias;
 			obj.put("name", name);
 			newIP = rootServerIP;
 			newPort = rootPort;
 		} else {
-			// NS record
-			obj.put("name", node.getString("name"));
 			newIP = node.getString("ip");
 			newPort = node.getInt("port");
 		}
