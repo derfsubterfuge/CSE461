@@ -170,7 +170,24 @@ public class DDNSResolverService extends NetLoadableService implements HTTPProvi
 				case 3:
 					throw new DDNSException.DDNSAuthorizationException(name);
 				case 4: 
-					// TODO: add retries, keep trying for 10 seconds, if still fails then throw exception		
+					long start = System.currentTimeMillis();
+					long end = start + 10000;	// ten seconds
+					int sleeptime = 5;
+					while (System.currentTimeMillis() < end && response.get("resulttype").equals("ddnsexception")) {
+						// sleep for x ms
+						try {
+							Thread.sleep(sleeptime);
+						} catch (InterruptedException e) {
+							// do nothing
+						}
+						
+						// try again				
+						response = resolverHelper(name.toString(), "unregister", rootServerIP, rootPort, unregisterObj, 0);
+						sleeptime *= 2;	// backoff
+					}
+					if (response.get("resulttype").equals("ddnsexception")) { // still an error
+						throw new DDNSException.DDNSRuntimeException(response.getString("message"));
+					}
 					break;
 				case 5: 
 					throw new DDNSException.DDNSTTLExpiredException(name);
@@ -231,7 +248,24 @@ public class DDNSResolverService extends NetLoadableService implements HTTPProvi
 				case 3:
 					throw new DDNSException.DDNSAuthorizationException(name);
 				case 4: 
-					// TODO: add retries, keep trying for 10 seconds, if still fails then throw exception		
+					long start = System.currentTimeMillis();
+					long end = start + 10000;	// ten seconds
+					int sleeptime = 5;
+					while (System.currentTimeMillis() < end && response.get("resulttype").equals("ddnsexception")) {
+						// sleep for sleeptime ms
+						try {
+							Thread.sleep(sleeptime);
+						} catch (InterruptedException e) {
+							// do nothing
+						}
+						
+						// try again				
+						response = resolverHelper(name.toString(), "register", rootServerIP, rootPort, registerObj, 0);
+						sleeptime *= 2;	// backoff
+					}
+					if (response.get("resulttype").equals("ddnsexception")) { // still an error
+						throw new DDNSException.DDNSRuntimeException(response.getString("message"));
+					}
 					break;
 				case 5: 
 					throw new DDNSException.DDNSTTLExpiredException(name);
@@ -289,8 +323,35 @@ public class DDNSResolverService extends NetLoadableService implements HTTPProvi
 				case 3:
 					throw new DDNSException.DDNSAuthorizationException(new DDNSFullName(nameStr));
 				case 4: 
-					// TODO: try again for 10 seconds;
-					return null;
+					long start = System.currentTimeMillis();
+					long end = start + 10000;	// ten seconds
+					int sleeptime = 5;
+					while (System.currentTimeMillis() < end && response.get("resulttype").equals("ddnsexception")) {
+						// sleep for sleeptime ms
+						try {
+							Thread.sleep(sleeptime);
+						} catch (InterruptedException e) {
+							// do nothing
+						}
+						
+						// try again				
+						response = resolverHelper(nameStr, "resolve", rootServerIP, rootPort, resolveObj, 0);
+						sleeptime *= 2;	// backoff
+					}
+					if (response.get("resulttype").equals("ddnsexception")) { 	// still an error
+						throw new DDNSException.DDNSRuntimeException(response.getString("message"));
+						
+					} else {													// success finally
+						JSONObject node = response.getJSONObject("node");
+						// either A or SOA
+						if (node.getString("type").equals("SOA")) {
+							SOARecord result = (SOARecord) DDNSRRecord.unmarshall(node);
+							return result;
+						}
+						// if wasn't SOA return A 
+						ARecord result = (ARecord) DDNSRRecord.unmarshall(node);
+						return result;
+					}
 				case 5: 
 					throw new DDNSException.DDNSTTLExpiredException(new DDNSFullName(nameStr));
 				case 6:
@@ -299,7 +360,6 @@ public class DDNSResolverService extends NetLoadableService implements HTTPProvi
 					throw new DDNSException(response.getString("message"));
 				}
 			} else {  														// SUCCESS
-				System.out.println(response);
 				JSONObject node = response.getJSONObject("node");
 				// either A or SOA
 				if (node.getString("type").equals("SOA")) {
