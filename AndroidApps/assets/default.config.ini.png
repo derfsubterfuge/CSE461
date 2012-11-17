@@ -15,7 +15,7 @@ debug.level=5
 #------------------------------------------------
 
 #  hostname must be a full name
-net.hostname=menzs_tolth.uw12au.cse461.
+net.hostname=test.menzs_tolth.uw12au.cse461.
 
 # list of class names of services to be started
 net.services=edu.uw.cs.cse461.Net.Base.DataXferRawService \
@@ -25,7 +25,6 @@ net.services=edu.uw.cs.cse461.Net.Base.DataXferRawService \
              edu.uw.cs.cse461.Net.RPC.RPCService \
              edu.uw.cs.cse461.Net.RPC.RPCCall \
              edu.uw.cs.cse461.Net.RPC.EchoRPCService \
-             edu.uw.cs.cse461.Net.DDNS.DDNSService \
              edu.uw.cs.cse461.Net.DDNS.DDNSResolverService \
              edu.uw.cs.cse461.HTTP.HTTPDService
             
@@ -55,7 +54,6 @@ android.apps=edu.uw.cs.cse461.AndroidApps.Infrastructure.AndroidAppManager \
              edu.uw.cs.cse461.AndroidApps.EchoRawActivity   \
              edu.uw.cs.cse461.AndroidApps.PingTCPMessageHandlerActivity   \
              edu.uw.cs.cse461.AndroidApps.PingRPCActivity   \
-             edu.uw.cs.cse461.AndroidApps.PingDDNSActivity   \
              edu.uw.cs.cse461.AndroidApps.SNetActivity      \
              edu.uw.cs.cse461.AndroidApps.VersionActivity
 android.initialapp=AndroidAppManager
@@ -82,6 +80,8 @@ ddns.rootserver=cse461.cs.washington.edu
 ddns.rootport=46120
 
 ddns.nodes=soa:menzs_tolth.uw12au.cse461.:tolth_menzs \
+			a:test.menzs_tolth.uw12au.cse461.:tolth_menzs \
+			a:test2.menzs_tolth.uw12au.cse461.:tolth_menzs
 
 ddns.resolvettl=300
 

@@ -87,6 +87,7 @@ public class PingRPCActivity extends NetLoadableAndroidApp {
         new Thread(){
         	public void run() {
                 try {
+                	
                 	mMyIP = IPFinder.getMyIP();
                 	
                 	if ( mMyIP != null ) runOnUiThread(new Runnable() {

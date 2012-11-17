@@ -13,6 +13,7 @@ import edu.uw.cs.cse461.AndroidApps.R;
 import edu.uw.cs.cse461.Net.Base.NetBase;
 import edu.uw.cs.cse461.Net.Base.NetLoadableAndroidApp;
 import edu.uw.cs.cse461.Net.RPC.RPCService;
+import edu.uw.cs.cse461.util.IPFinder;
 
 public class AndroidAppManager extends NetLoadableAndroidApp {
 	
