@@ -145,8 +145,10 @@ public class DDNSResolverService extends NetLoadableService implements HTTPProvi
 	@Override
 	public void unregister(DDNSFullNameInterface name) throws DDNSException, JSONException {
 		// record in cache that there is no address associated with this name anymore
-		if (cache.containsKey(name.toString())) {
-			cache.get(name.toString()).cancelRegistration();
+		synchronized(cache) {
+			if (cache.containsKey(name.toString())) {
+				cache.get(name.toString()).cancelRegistration();
+			}
 		}
 		cachePutLocal(name.toString(), new CacheRecord(new DDNSException.DDNSNoAddressException(name)));
 		
@@ -222,7 +224,7 @@ public class DDNSResolverService extends NetLoadableService implements HTTPProvi
 	public void register(DDNSFullNameInterface name, int port) throws DDNSException {
 		// want to record in cache even if it fails
 		ARecord record = new ARecord(myIP, port);
-		//TODO: make sure extra timer thread isn't created if already registered
+
 		CacheRecord cacherecord = new CacheRecord(record, new RegisterTask(name, port), true);
 		cachePutLocal(name.toString(), cacherecord);
 		
