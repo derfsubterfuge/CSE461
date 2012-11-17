@@ -194,7 +194,7 @@ public class DDNSService extends NetLoadableService implements HTTPProviderInter
 			RRType recordType;
 			JSONObject nodeJSON;
 			synchronized(this) {
-				node = nodeLookup(name);
+				node = nodeLookup(name, true);
 				DDNSRRecord record = node.getRecord();
 				
 				if(node.getName().equals(name))
@@ -270,8 +270,10 @@ public class DDNSService extends NetLoadableService implements HTTPProviderInter
 			}
 			resultJSON.put("resulttype", "registerresult");
 		} catch(DDNSException e) {
+			e.printStackTrace();
 			resultJSON = ddnsexceptionToJSON(e);
 		} catch(JSONException e) {
+			e.printStackTrace();
 			resultJSON = ddnsexceptionToJSON(new DDNSRuntimeException(e.getMessage()));
 		}
 		return resultJSON;

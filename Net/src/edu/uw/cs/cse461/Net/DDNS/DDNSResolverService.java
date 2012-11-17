@@ -75,7 +75,7 @@ public class DDNSResolverService extends NetLoadableService implements HTTPProvi
 		if (password == null) {
 			throw new DDNSException("No ddnsresolver.password entry in config file.");
 		}
-		
+
 		// maximum # of RPC calls to make 
 		String max = config.getProperty("ddnsresolver.serverttl");
 		if (max == null) {
@@ -89,7 +89,11 @@ public class DDNSResolverService extends NetLoadableService implements HTTPProvi
 		// finally - REGISTER OURSELVES
 		int port = Integer.parseInt(config.getProperty("rpc.serverport"));
 		myName = config.getProperty("net.hostname");
-		register(new DDNSFullName(myName), ((RPCServiceInterface)(NetBase.theNetBase().getService("rpc"))).localPort());
+		try {
+			register(new DDNSFullName(myName), ((RPCServiceInterface)(NetBase.theNetBase().getService("rpc"))).localPort());
+		} catch(Exception e) {
+			e.printStackTrace();
+		}
 	}
 	
 	
@@ -218,6 +222,7 @@ public class DDNSResolverService extends NetLoadableService implements HTTPProvi
 	public void register(DDNSFullNameInterface name, int port) throws DDNSException {
 		// want to record in cache even if it fails
 		ARecord record = new ARecord(myIP, port);
+		//TODO: make sure extra timer thread isn't created if already registered
 		CacheRecord cacherecord = new CacheRecord(record, new RegisterTask(name, port), true);
 		cachePutLocal(name.toString(), cacherecord);
 		
@@ -296,7 +301,7 @@ public class DDNSResolverService extends NetLoadableService implements HTTPProvi
 		// check cache first
 		synchronized (cache) {
 			if (cache.containsKey(nameStr)) {
-				System.out.println("found in cache!");
+				//System.out.println("found in cache!");
 				return cache.get(nameStr).getRecord();
 			}
 		}
