@@ -1,7 +1,13 @@
 package edu.uw.cs.cse461.SNet;
 
+import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileReader;
+import java.util.Arrays;
+import java.util.Iterator;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import edu.uw.cs.cse461.DB461.DB461.DB461Exception;
@@ -10,6 +16,8 @@ import edu.uw.cs.cse461.Net.DDNS.DDNSFullName;
 import edu.uw.cs.cse461.Net.DDNS.DDNSFullNameInterface;
 import edu.uw.cs.cse461.Net.RPC.RPCService;
 import edu.uw.cs.cse461.SNet.SNetDB461.CommunityRecord;
+import edu.uw.cs.cse461.SNet.SNetDB461.PhotoRecord;
+import edu.uw.cs.cse461.util.Base64;
 import edu.uw.cs.cse461.util.Log;
 
 
@@ -21,7 +29,7 @@ import edu.uw.cs.cse461.util.Log;
  */
 public class SNetController {
 	private static final String TAG="SNetController";
-	
+
 	/**
 	 * A full path name to the sqlite database.
 	 */
@@ -130,7 +138,53 @@ public class SNetController {
 	 * @param galleryDir File object representing the gallery directory
 	 * @throws DB461Exception
 	 */
+	//if filename is not a hash, convert it to a hash and put it in the galleryDir
 	synchronized public void setChosenPhoto(DDNSFullNameInterface memberName, String filename, File galleryDir) throws DB461Exception {
+		//TODO: handle error properly and db.discard
+		File photoFile = new File(filename);
+		if(!photoFile.isFile()) {
+			//throw error
+		}
+		
+		SNetDB461 db = new SNetDB461(this.DBName());
+		CommunityRecord memRec = db.COMMUNITYTABLE.readOne(memberName.toString());
+		if(memRec == null) {
+			//TODO: throw error
+		}
+		
+		//OLD PHOTO HANDLING: Decrement reference count on any existing chosen photo and
+		//delete underyling file if appropriate.
+		int oldPhotoHash = memRec.chosenPhotoHash;
+		PhotoRecord oldPhotoRec = db.PHOTOTABLE.readOne(oldPhotoHash);
+		if(oldPhotoRec == null) {
+			//TODO: not sure what to do
+		}
+		
+		oldPhotoRec.refCount--;
+		if(oldPhotoRec.refCount <= 0) {
+			if(oldPhotoRec.file != null && oldPhotoRec.file.isFile())
+				oldPhotoRec.file.delete();
+			db.PHOTOTABLE.delete(oldPhotoHash);
+		} else {
+			db.PHOTOTABLE.write(oldPhotoRec);
+		}
+		
+		//NEW PHOTO HANDLING: if record, doesn't exit, create one; otherwise increment refcount
+		int newPhotoHash = hashPhoto(photoFile);
+		PhotoRecord newPhotoRec = db.PHOTOTABLE.readOne(newPhotoHash);
+		if(newPhotoRec == null) {
+			newPhotoRec = db.createPhotoRecord();
+			newPhotoRec.file = photoFile;
+			newPhotoRec.hash = newPhotoHash;
+			newPhotoRec.refCount = 1;
+		} else {
+			newPhotoRec.refCount++;
+		}
+		db.PHOTOTABLE.write(newPhotoRec);
+		
+		memRec.chosenPhotoHash = newPhotoHash;
+		memRec.generation = Math.max(memRec.generation+1, (int) NetBase.theNetBase().now());
+		db.COMMUNITYTABLE.write(memRec);
 	}
 
 	/**
@@ -152,6 +206,15 @@ public class SNetController {
 	 * @throws DB461Exception The member is not in the community table in the DB, or some unanticipated exception occurs.
 	 */
 	synchronized public void setFriend(DDNSFullNameInterface friend, boolean isfriend) throws DB461Exception {
+		//TODO: handle error properly and db.discard
+		SNetDB461 db = new SNetDB461(this.DBName());
+		CommunityRecord friendRec = db.COMMUNITYTABLE.readOne(friend.toString());
+		if(friendRec == null) {
+			//TODO throw error
+		}
+		friendRec.isFriend = isfriend;
+		db.COMMUNITYTABLE.write(friendRec);
+		
 	}
 	
 	/**
@@ -164,6 +227,7 @@ public class SNetController {
 	 * @throws DB461Exception  Can't find member in community table, or some unanticipated exception occurs.
 	 */
 	synchronized public void newMyPhoto(DDNSFullNameInterface memberName, String filename, File galleryDir) throws DB461Exception {
+		//TODO:
 	}
 	
 	/**
@@ -173,6 +237,7 @@ public class SNetController {
 	 * @throws DB461Exception Something went wrong...
 	 */
 	synchronized public void fetchUpdatesCaller( String friend, File galleryDir) throws DB461Exception {
+		//TODO:
 	}
 	
 	/**
@@ -181,7 +246,51 @@ public class SNetController {
 	 * @return JSONObject containing communityupdates JSONObject and photoupdates JSONArray (described in assignment)
 	 */
 	synchronized public JSONObject fetchUpdatesCallee(JSONObject args) throws Exception {
-		return null;
+		//TODO: handle error properly and db.discard
+		JSONObject result = new JSONObject();
+		JSONObject community = args.getJSONObject("community");
+		JSONArray needPhotos = args.getJSONArray("needphotos");
+		SNetDB461 db = new SNetDB461(this.DBName());
+		
+		//TODO: does community updates only contain people from the community argument?
+		//community updates returns all member info that i know about that is more up to date than what they know about
+		JSONObject communityUpdates = new JSONObject();
+		if(community != null) {
+			Iterator<String> iter = community.keys();
+			while(iter.hasNext()) {
+				String memName = iter.next();
+				CommunityRecord memInfoOurs = db.COMMUNITYTABLE.readOne(memName);
+				
+				if(memInfoOurs != null) {
+					JSONObject memInfoTheirs = community.getJSONObject(memName);
+					int memGenNumTheirs = memInfoTheirs.getInt("generation");
+					
+					if(memInfoOurs.generation > memGenNumTheirs) {
+						JSONObject memInfoPut = new JSONObject();
+						memInfoPut.put("generation", memInfoOurs.generation);
+						memInfoPut.put("myphotohash", memInfoOurs.myPhotoHash);
+						memInfoPut.put("chosenphotohash", memInfoOurs.chosenPhotoHash);
+						communityUpdates.put(memName, memInfoPut);
+					}
+				}
+			}
+		}
+		
+		JSONArray photoUpdates = new JSONArray();
+		if(needPhotos != null) {
+			for(int i = 0; i < needPhotos.length(); i++) {
+				int photoHash = needPhotos.getInt(i);
+				PhotoRecord photoOurs = db.PHOTOTABLE.readOne(photoHash);
+				
+				if(photoOurs != null && photoOurs.file != null && photoOurs.file.isFile()) {
+					photoUpdates.put(photoHash);
+				}
+			}
+		}
+		
+		result.put("communityupdates", communityUpdates);
+		result.put("photoupdates", photoUpdates);
+		return result;
 	}	
 	
 	/**
@@ -193,8 +302,36 @@ public class SNetController {
 	 *     not exist if the length is 0.
 	 * @throws Exception
 	 */
-	synchronized public JSONObject fetchPhotoCallee(JSONObject args) throws Exception {
-		return null;
+	synchronized public JSONObject fetchPhotoCallee(JSONObject args) throws Exception { 
+		//TODO: handle error properly and db.discard
+		JSONObject result = new JSONObject();
+		int photoHash = args.getInt("photoHash");
+		int maxLength = args.getInt("maxLength");
+		int offset = args.getInt("offset");
+		SNetDB461 db = new SNetDB461(this.DBName());
+		PhotoRecord pr = db.PHOTOTABLE.readOne(photoHash);
+		if(pr == null) {
+			//TODO:doesn't exist
+		}
+		
+		File photoFile = pr.file;
+		FileInputStream fstream = new FileInputStream(photoFile); //possibly make more efficient
+		byte[] photoData = new byte[maxLength];
+		int bytesRead = fstream.read(photoData, offset, maxLength);
+		//handle if bytesRead = -1
+		result.put("photoData", Base64.encodeBytes(photoData, 0, bytesRead));
+		result.put("photoHash", pr.hash);
+		result.put("length", bytesRead);
+		result.put("offset", offset);
+		return result;
 	}
 	
+	private static int hashPhoto(String photo) {
+		return hashPhoto(new File(photo));
+	}
+	
+	private static int hashPhoto(File photoFile) {
+		//TODO:
+		return -1;
+	}
 }
