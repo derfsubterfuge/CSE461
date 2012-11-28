@@ -16,6 +16,7 @@ import edu.uw.cs.cse461.Net.DDNS.DDNSFullName;
 import edu.uw.cs.cse461.Net.DDNS.DDNSFullNameInterface;
 import edu.uw.cs.cse461.Net.RPC.RPCService;
 import edu.uw.cs.cse461.SNet.SNetDB461.CommunityRecord;
+import edu.uw.cs.cse461.SNet.SNetDB461.Photo;
 import edu.uw.cs.cse461.SNet.SNetDB461.PhotoRecord;
 import edu.uw.cs.cse461.util.Base64;
 import edu.uw.cs.cse461.util.Log;
@@ -140,51 +141,7 @@ public class SNetController {
 	 */
 	//if filename is not a hash, convert it to a hash and put it in the galleryDir
 	synchronized public void setChosenPhoto(DDNSFullNameInterface memberName, String filename, File galleryDir) throws DB461Exception {
-		//TODO: handle error properly and db.discard
-		File photoFile = new File(filename);
-		if(!photoFile.isFile()) {
-			//throw error
-		}
-		
-		SNetDB461 db = new SNetDB461(this.DBName());
-		CommunityRecord memRec = db.COMMUNITYTABLE.readOne(memberName.toString());
-		if(memRec == null) {
-			//TODO: throw error
-		}
-		
-		//OLD PHOTO HANDLING: Decrement reference count on any existing chosen photo and
-		//delete underyling file if appropriate.
-		int oldPhotoHash = memRec.chosenPhotoHash;
-		PhotoRecord oldPhotoRec = db.PHOTOTABLE.readOne(oldPhotoHash);
-		if(oldPhotoRec == null) {
-			//TODO: not sure what to do
-		}
-		
-		oldPhotoRec.refCount--;
-		if(oldPhotoRec.refCount <= 0) {
-			if(oldPhotoRec.file != null && oldPhotoRec.file.isFile())
-				oldPhotoRec.file.delete();
-			db.PHOTOTABLE.delete(oldPhotoHash);
-		} else {
-			db.PHOTOTABLE.write(oldPhotoRec);
-		}
-		
-		//NEW PHOTO HANDLING: if record, doesn't exit, create one; otherwise increment refcount
-		int newPhotoHash = hashPhoto(photoFile);
-		PhotoRecord newPhotoRec = db.PHOTOTABLE.readOne(newPhotoHash);
-		if(newPhotoRec == null) {
-			newPhotoRec = db.createPhotoRecord();
-			newPhotoRec.file = photoFile;
-			newPhotoRec.hash = newPhotoHash;
-			newPhotoRec.refCount = 1;
-		} else {
-			newPhotoRec.refCount++;
-		}
-		db.PHOTOTABLE.write(newPhotoRec);
-		
-		memRec.chosenPhotoHash = newPhotoHash;
-		memRec.generation = Math.max(memRec.generation+1, (int) NetBase.theNetBase().now());
-		db.COMMUNITYTABLE.write(memRec);
+		setPhoto(memberName, filename, galleryDir, "chosen");
 	}
 
 	/**
@@ -227,7 +184,77 @@ public class SNetController {
 	 * @throws DB461Exception  Can't find member in community table, or some unanticipated exception occurs.
 	 */
 	synchronized public void newMyPhoto(DDNSFullNameInterface memberName, String filename, File galleryDir) throws DB461Exception {
-		//TODO:
+		setPhoto(memberName, filename, galleryDir, "my");
+	}
+	
+	/**
+	 * Registers a photo as the "my" or "chosen" photo for a given member.
+	 * Decrements the reference count of any existing my photo for that member, and deletes the underyling file for it
+	 * as appropriate.
+	 * @param memberName Member name
+	 * @param filename  Full path name to new my photo file
+	 * @param galleryDir File object describing directory in which gallery photos live
+	 * @param photoType String indicating either "my" or "chosen" as what is to be updated
+	 * @throws DB461Exception  Can't find member in community table, or some unanticipated exception occurs.
+	 */
+	private void setPhoto(DDNSFullNameInterface memberName, String filename, File galleryDir, String photoType) throws DB461Exception {
+		if(!photoType.equals("chosen") && !photoType.equals("my"))
+			throw new IllegalArgumentException("photo type must be either chosen or my");
+		
+		File photoFile = new File(filename);
+		if(!photoFile.isFile()) {
+			//throw error
+		}
+		
+		SNetDB461 db = new SNetDB461(this.DBName());
+		CommunityRecord memRec = db.COMMUNITYTABLE.readOne(memberName.toString());
+		if(memRec == null) {
+			//TODO: throw error
+		}
+		
+		//OLD PHOTO HANDLING: Decrement reference count on any existing chosen photo and
+		//delete underyling file if appropriate.
+		int oldPhotoHash;
+		if(photoType.equals("chosen"))
+			oldPhotoHash = memRec.chosenPhotoHash;
+		else //my photo
+			oldPhotoHash = memRec.myPhotoHash;
+		
+		if(oldPhotoHash != 0) { //if old photo exists
+			PhotoRecord oldPhotoRec = db.PHOTOTABLE.readOne(oldPhotoHash);
+			if(oldPhotoRec == null) {
+				//TODO: not sure what to do
+			}
+			
+			oldPhotoRec.refCount--;
+			if(oldPhotoRec.refCount <= 0) {
+				if(oldPhotoRec.file != null && oldPhotoRec.file.isFile())
+					oldPhotoRec.file.delete();
+				db.PHOTOTABLE.delete(oldPhotoHash);
+			} else {
+				db.PHOTOTABLE.write(oldPhotoRec);
+			}
+		}
+		
+		//NEW PHOTO HANDLING: if record, doesn't exit, create one; otherwise increment refcount
+		int newPhotoHash = (new Photo(photoFile)).hash();
+		PhotoRecord newPhotoRec = db.PHOTOTABLE.readOne(newPhotoHash);
+		if(newPhotoRec == null) {
+			newPhotoRec = db.createPhotoRecord();
+			newPhotoRec.file = photoFile;
+			newPhotoRec.hash = newPhotoHash;
+			newPhotoRec.refCount = 1;
+		} else {
+			newPhotoRec.refCount++;
+		}
+		db.PHOTOTABLE.write(newPhotoRec);
+		
+		if(photoType.equals("chosen"))
+			memRec.chosenPhotoHash= newPhotoHash;
+		else //my photo
+			memRec.myPhotoHash = newPhotoHash;
+		memRec.generation = getGenNum(memRec.generation);
+		db.COMMUNITYTABLE.write(memRec);
 	}
 	
 	/**
@@ -326,12 +353,7 @@ public class SNetController {
 		return result;
 	}
 	
-	private static int hashPhoto(String photo) {
-		return hashPhoto(new File(photo));
-	}
-	
-	private static int hashPhoto(File photoFile) {
-		//TODO:
-		return -1;
+	private static int getGenNum(int oldGenNum) {
+		return Math.max(oldGenNum+1, (int) NetBase.theNetBase().now());
 	}
 }
