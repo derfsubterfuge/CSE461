@@ -87,7 +87,6 @@ public class DDNSResolverService extends NetLoadableService implements HTTPProvi
 		timer = new Timer();
 		
 		// finally - REGISTER OURSELVES
-		int port = Integer.parseInt(config.getProperty("rpc.serverport"));
 		myName = config.getProperty("net.hostname");
 		try {
 			register(new DDNSFullName(myName), ((RPCServiceInterface)(NetBase.theNetBase().getService("rpc"))).localPort());
@@ -224,7 +223,6 @@ public class DDNSResolverService extends NetLoadableService implements HTTPProvi
 	public void register(DDNSFullNameInterface name, int port) throws DDNSException {
 		// want to record in cache even if it fails
 		ARecord record = new ARecord(myIP, port);
-
 		CacheRecord cacherecord = new CacheRecord(record, new RegisterTask(name, port), true);
 		cachePutLocal(name.toString(), cacherecord);
 		
@@ -303,7 +301,6 @@ public class DDNSResolverService extends NetLoadableService implements HTTPProvi
 		// check cache first
 		synchronized (cache) {
 			if (cache.containsKey(nameStr)) {
-				//System.out.println("found in cache!");
 				return cache.get(nameStr).getRecord();
 			}
 		}
@@ -353,10 +350,20 @@ public class DDNSResolverService extends NetLoadableService implements HTTPProvi
 						// either A or SOA
 						if (node.getString("type").equals("SOA")) {
 							SOARecord result = (SOARecord) DDNSRRecord.unmarshall(node);
+							
+							// add to cache
+							CacheRecord crecord = new CacheRecord(result, new CacheTask(nameStr), false);
+							cachePutGlobal(nameStr, crecord);
+							
 							return result;
 						}
 						// if wasn't SOA return A 
 						ARecord result = (ARecord) DDNSRRecord.unmarshall(node);
+						
+						// add to cache
+						CacheRecord crecord = new CacheRecord(result, new CacheTask(nameStr), false);
+						cachePutGlobal(nameStr, crecord);
+						
 						return result;
 					}
 				case 5: 
@@ -371,10 +378,20 @@ public class DDNSResolverService extends NetLoadableService implements HTTPProvi
 				// either A or SOA
 				if (node.getString("type").equals("SOA")) {
 					SOARecord result = (SOARecord) DDNSRRecord.unmarshall(node);
+					
+					// add to cache
+					CacheRecord crecord = new CacheRecord(result, new CacheTask(nameStr), false);
+					cachePutGlobal(nameStr, crecord);
+					
 					return result;
 				}
 				// if wasn't SOA return A 
 				ARecord result = (ARecord) DDNSRRecord.unmarshall(node);
+				
+				// add to cache
+				CacheRecord crecord = new CacheRecord(result, new CacheTask(nameStr), false);
+				cachePutGlobal(nameStr, crecord);
+				
 				return result;
 			}
 		} catch (IOException e) {
@@ -430,6 +447,12 @@ public class DDNSResolverService extends NetLoadableService implements HTTPProvi
 	
 	private void cachePutLocal(String name, CacheRecord record) {
 		synchronized (cache) {
+			// if the cache already contains a record for this local name, 
+			// cancel the previous registration task while we still have a way to refer to it 
+			if(cache.containsKey(name)) {
+				cache.get(name).cancelRegistration();
+			}
+			// update/add the name->record mapping
 			cache.put(name, record);
 		}
 	}
