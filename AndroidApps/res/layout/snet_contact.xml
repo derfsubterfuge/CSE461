@@ -29,7 +29,7 @@
         android:layout_alignBaseline="@+id/friendbutton"
         android:layout_alignBottom="@+id/friendbutton"
         android:layout_marginLeft="16dp"
-        android:layout_toRightOf="@+id/memberspinner"
+        android:layout_toRightOf="@+id/contactbutton"
 		android:onClick="onUnfriend"
         android:text="@string/snet_unfriend" />
 
@@ -52,5 +52,15 @@
         android:layout_marginTop="52dp"
 		android:onClick="onFixDB"
         android:text="@string/snet_fixdb" />
+    
+    <Button
+        android:id="@+id/backbutton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_below="@+id/fixdbbutton"
+        android:layout_centerHorizontal="true"
+        android:layout_marginTop="52dp"
+		android:onClick="onBack"
+        android:text="Back" />
 
 </RelativeLayout>
