@@ -144,8 +144,8 @@ public class SNetController extends NetLoadableService {
 
 		RPCService rpcService = (RPCService)NetBase.theNetBase().getService("rpc");
 		if ( rpcService == null) throw new Exception("The SNet requires that the RPC resolver service be loaded");
-		rpcService.registerHandler(loadablename(), "fetchUpdates", fetchupdates );
-		rpcService.registerHandler(loadablename(), "fetchPhoto", fetchphoto );
+		rpcService.registerHandler(loadablename(), "fetchUpdatesCallee", fetchupdates );
+		rpcService.registerHandler(loadablename(), "fetchPhotoCallee", fetchphoto );
 	}
 
 	/**
