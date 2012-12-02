@@ -2,6 +2,7 @@ package edu.uw.cs.cse461.AndroidApps;
 
 import java.io.File;
 import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
@@ -55,6 +56,9 @@ public class SNetActivity extends NetLoadableAndroidApp {
         ConfigManager config = NetBase.theNetBase().config();
         myName = config.getProperty("net.hostname");
 		galleryDir = new File(SD_CARD_PATH + "/snetpictures");
+		if (!galleryDir.exists()) {
+			galleryDir.mkdir();
+		}
 		dbPath = SD_CARD_PATH;
 		controller = new SNetController(dbPath);
 
@@ -138,40 +142,16 @@ public class SNetActivity extends NetLoadableAndroidApp {
     // CONTACT VIEW BUTTON HANDLERS //
     //////////////////////////////////
     
-    // TODO
     // click Befriend
     public void onFriend(View b) {
     	Log.d(TAG, "clicked Befriend");
-    	
-    	// get current name displayed in drop-down menu
-    	Spinner spinner = (Spinner) findViewById(R.id.memberspinner);
-    	String name = spinner.getSelectedItem().toString();
-    	Log.d(TAG, "friending member: " + name);
-    	
-    	// call set friend for that name with isFriend = true;
-    	try {
-			controller.setFriend(new DDNSFullName(name), true);
-		} catch (DB461Exception e) {
-			Log.e(TAG, e.getMessage());
-		}
+    	updateFriend(true);
     }
     
-    // TODO
     // click Unfriend
     public void onUnfriend(View b) {
     	Log.d(TAG, "clicked UnFriend");
-    	
-    	// get current name displayed in drop-down menu
-    	Spinner spinner = (Spinner) findViewById(R.id.memberspinner);
-    	String name = spinner.getSelectedItem().toString();
-    	Log.d(TAG, "unfriending member: " + name);
-    	
-    	// call set friend for that name with isFriend = false;
-    	try {
-			controller.setFriend(new DDNSFullName(name), false);
-		} catch (DB461Exception e) {
-			Log.e(TAG, e.getMessage());
-		}
+    	updateFriend(false);
     }
     
     // TODO
@@ -179,7 +159,16 @@ public class SNetActivity extends NetLoadableAndroidApp {
     public void onContact(View b) {
     	Log.d(TAG, "clicked Contact");
     	
-    	// fetchUpdatesCaller(name, galleryDir)
+    	// get current name displayed in drop-down menu
+    	Spinner spinner = (Spinner) findViewById(R.id.memberspinner);
+    	String name = spinner.getSelectedItem().toString();
+    	
+    	try {
+			controller.fetchUpdatesCaller(name, galleryDir);
+		} catch (DB461Exception e) {
+			e.printStackTrace();
+			Log.e(TAG, e.getMessage());
+		}
     }
     
     // click Fix DB
@@ -209,17 +198,33 @@ public class SNetActivity extends NetLoadableAndroidApp {
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
     	Log.d(TAG, "got a result!");
     	switch (requestCode) {
-	    	case CAPTURE_IMAGE_ACTIVITY_REQUEST_CODE:
-	    		// TODO : save photo to gallery
-	    		// controller.newMyPhoto(new DDNSFullName(myName), filename, galleryDir)
-	    		
-	    		// Try to update gallery viewer
-	    	    sendBroadcast(new Intent (Intent.ACTION_MEDIA_MOUNTED, Uri.parse("file://" + Environment.getExternalStorageDirectory())));
-	    	    
+	    	case CAPTURE_IMAGE_ACTIVITY_REQUEST_CODE:    		
 	    	    // get the picture I just took:
 	    	    Bitmap photoBmp = (Bitmap)data.getExtras().get("data");
     		    ImageView myImage = (ImageView) findViewById(R.id.mypicture);
     		    myImage.setImageBitmap(photoBmp);
+    		    
+				try {
+					// create file for it
+
+					File myPhoto = File.createTempFile("myphoto", ".jpg", galleryDir);
+					FileOutputStream myPhotoStream = new FileOutputStream(myPhoto);
+					
+					// write the data to that file
+					photoBmp.compress(Bitmap.CompressFormat.JPEG, 100, myPhotoStream);
+					
+					// update the db
+					controller.newMyPhoto(new DDNSFullName(myName), myPhoto.getAbsolutePath(), galleryDir);
+					
+				} catch (IOException e) {
+					e.printStackTrace();
+					Log.e(TAG, e.getMessage());
+				} catch (DB461Exception e) {
+					Log.e(TAG, e.getMessage());
+				}
+       		    
+	    		// Try to update gallery viewer
+	    	    sendBroadcast(new Intent (Intent.ACTION_MEDIA_MOUNTED, Uri.parse("file://" + Environment.getExternalStorageDirectory())));
 	    	    
 	    		break;
 	    	case CHOOSE_PICTURE_ACTIVITY_REQUEST_CODE:
@@ -257,6 +262,10 @@ public class SNetActivity extends NetLoadableAndroidApp {
     	}
     }
     
+    
+    /////////////
+    // HELPERS //
+    /////////////
     
     // handles redirecting to the home screen of the app as well as 
     // getting the myphoto and chosen photo from the db and displaying them
@@ -337,7 +346,16 @@ public class SNetActivity extends NetLoadableAndroidApp {
     }
     
     public void updateFriend(boolean setFriend) {
+    	// get current name displayed in drop-down menu
+    	Spinner spinner = (Spinner) findViewById(R.id.memberspinner);
+    	String name = spinner.getSelectedItem().toString();
     	
+    	// call set friend for that name with isFriend = false;
+    	try {
+			controller.setFriend(new DDNSFullName(name), setFriend);
+		} catch (DB461Exception e) {
+			Log.e(TAG, e.getMessage());
+		}
     }
     
    

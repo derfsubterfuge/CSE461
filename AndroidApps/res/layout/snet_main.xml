@@ -40,7 +40,7 @@
         android:layout_below="@+id/button1"
         android:layout_centerHorizontal="true"
         android:layout_marginTop="31dp"
-        android:onClick="onExchange"
+        android:onClick="onUpdatePictures"
         android:text="@string/snet_updatepictures" />
 
     <ImageView
