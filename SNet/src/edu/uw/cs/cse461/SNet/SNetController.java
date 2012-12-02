@@ -474,7 +474,7 @@ public class SNetController extends NetLoadableService {
 			resolver.register(myHostname, myPort);
 			ARecord memConnectInfo = resolver.resolve(mem);
 			
-			JSONObject results = RPCCall.invoke(memConnectInfo.ip(), memConnectInfo.port(), "snet", "_rpcFetchUpdates", createFetchUpdatesArgs());
+			JSONObject results = RPCCall.invoke(memConnectInfo.ip(), memConnectInfo.port(), "snet", "fetchUpdates", createFetchUpdatesArgs());
 			
 			/****************************
 			 * PERFORM COMMUNITY UPDATES
@@ -550,7 +550,7 @@ public class SNetController extends NetLoadableService {
 							fetchPhotoArgs.put("offset", offset);
 							JSONObject dataReturned = null;
 							try {
-								dataReturned = RPCCall.invoke(memConnectInfo.ip(), memConnectInfo.port(), "snet", "_rpcFetchUpdates", createFetchUpdatesArgs());
+								dataReturned = RPCCall.invoke(memConnectInfo.ip(), memConnectInfo.port(), "snet", "fetchPhoto", createFetchUpdatesArgs());
 							} catch(Exception e) {
 								throw new JSONException(e.getMessage());
 							}
