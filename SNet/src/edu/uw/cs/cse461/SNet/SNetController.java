@@ -498,7 +498,7 @@ public class SNetController {
 				}
 				
 				JSONObject fetchPhotoArgs = new JSONObject();
-				fetchPhotoArgs.put("photoHash", photoHash);
+				fetchPhotoArgs.put("photohash", photoHash);
 				fetchPhotoArgs.put("maxlength", MAX_LENGTH_PHOTO_FETCH);
 				int numBytesRecieved = -1;
 				int offset = 0;
@@ -526,7 +526,7 @@ public class SNetController {
 							} else if(offset != offsetRecieved) {
 								throw new JSONException("invalid offset.  offset must match recieved offset");
 							} else if(numBytesRecieved > 0) {
-								byte[] bytesRecieved = Base64.decode(dataReturned.getString("photoData"));
+								byte[] bytesRecieved = Base64.decode(dataReturned.getString("photodata"));
 								bytesRecieved = Arrays.copyOf(bytesRecieved, numBytesRecieved);
 								fstream.write(bytesRecieved);
 							}
@@ -709,7 +709,7 @@ public class SNetController {
 		FileInputStream fstream = null;
 		try {
 			JSONObject result = new JSONObject();
-			int photoHash = args.getInt("photoHash");
+			int photoHash = args.getInt("photohash");
 			int maxLength = args.getInt("maxlength");
 			int offset = args.getInt("offset");
 			db = new SNetDB461(this.DBName());
@@ -723,13 +723,13 @@ public class SNetController {
 			byte[] photoData = new byte[maxLength];
 			int bytesRead = fstream.read(photoData, offset, maxLength);
 			if(bytesRead == -1) {
-				result.put("photoData", (String) null);
-				result.put("photoHash",  pr.hash);
+				result.put("photodata", (String) null);
+				result.put("photohash",  pr.hash);
 				result.put("length", 0);
 				result.put("offset", offset);
 			} else {
-				result.put("photoData", Base64.encodeBytes(photoData, 0, bytesRead));
-				result.put("photoHash", pr.hash);
+				result.put("photodata", Base64.encodeBytes(photoData, 0, bytesRead));
+				result.put("photohash", pr.hash);
 				result.put("length", bytesRead);
 				result.put("offset", offset);
 			}
