@@ -31,8 +31,8 @@ public class SNet extends NetLoadableConsoleApp implements HTTPProviderInterface
 	private static final String GALLERYDIR = "../ConsoleRun/SNetGallery-";
 	private static final String SNETDBDIR = "../ConsoleRun";
 	
-	private RPCCallableMethod fetchupdates;
-	private RPCCallableMethod fetchphoto;
+	/*private RPCCallableMethod fetchupdates;
+	private RPCCallableMethod fetchphoto;*/
 	
 	private File mGalleryDir;
 	private DDNSFullName mMyName;
@@ -61,7 +61,7 @@ public class SNet extends NetLoadableConsoleApp implements HTTPProviderInterface
 		// set up SNetController -- tell it where the db is
 
 		mSNetController = new SNetController(SNETDBDIR);
-		
+		/*
 		// register rpc interface
 		fetchupdates = new RPCCallableMethod(this, "_rpcFetchUpdates");
 		fetchphoto = new RPCCallableMethod(this, "_rpcFetchPhoto");
@@ -70,7 +70,7 @@ public class SNet extends NetLoadableConsoleApp implements HTTPProviderInterface
 		if ( rpcService == null) throw new Exception("The SNet app requires that the RPC resolver service be loaded");
 		rpcService.registerHandler(loadablename(), "fetchUpdates", fetchupdates );
 		rpcService.registerHandler(loadablename(), "fetchPhoto", fetchphoto );
-		
+		*/
 		// make sure user is in db
 		mMyName = new DDNSFullName(NetBase.theNetBase().hostname());
 		mSNetController.registerBaseUsers(mMyName);
