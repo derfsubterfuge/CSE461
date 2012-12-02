@@ -44,6 +44,9 @@ public class SNetController extends NetLoadableService {
 	private static final String TAG="SNetController";
 	private static final int MAX_LENGTH_PHOTO_FETCH = 16*1024;
 	private static final int MAX_PHOTO_XFER_RETRY = 8;
+	private static Object loaderLock = new Object();
+	private static boolean mIsUp = false;
+	private static boolean mIsRegistered = false;
 	/**
 	 * A full path name to the sqlite database.
 	 */
@@ -51,6 +54,7 @@ public class SNetController extends NetLoadableService {
 
 	private RPCCallableMethod fetchupdates;
 	private RPCCallableMethod fetchphoto;
+	
 	
 	/**
 	 * IMPLEMENTED: Returns the full path name of the DB file.
@@ -138,14 +142,20 @@ public class SNetController extends NetLoadableService {
 		super("snet", true);
 		mDBName = dbDirName + "/" + new DDNSFullName(NetBase.theNetBase().hostname()) + "snet.db";
 		
-		// register rpc interface
-		fetchupdates = new RPCCallableMethod(this, "fetchUpdatesCallee");
-		fetchphoto = new RPCCallableMethod(this, "fetchPhotoCallee");
-
-		RPCService rpcService = (RPCService)NetBase.theNetBase().getService("rpc");
-		if ( rpcService == null) throw new Exception("The SNet requires that the RPC resolver service be loaded");
-		rpcService.registerHandler(loadablename(), "fetchUpdates", fetchupdates );
-		rpcService.registerHandler(loadablename(), "fetchPhoto", fetchphoto );
+		synchronized(loaderLock) {
+			if(!mIsRegistered) {
+				// register rpc interface
+				fetchupdates = new RPCCallableMethod(this, "fetchUpdatesCallee");
+				fetchphoto = new RPCCallableMethod(this, "fetchPhotoCallee");
+		
+				RPCService rpcService = (RPCService)NetBase.theNetBase().getService("rpc");
+				if ( rpcService == null) throw new Exception("The SNet requires that the RPC resolver service be loaded");
+				rpcService.registerHandler(loadablename(), "fetchUpdates", fetchupdates );
+				rpcService.registerHandler(loadablename(), "fetchPhoto", fetchphoto );
+				mIsRegistered = true;
+			}
+			mIsUp = true;
+		}
 	}
 
 	/**
@@ -770,7 +780,14 @@ public class SNetController extends NetLoadableService {
 
 	@Override
 	public String dumpState() {
-		// TODO Auto-generated method stub
-		return null;
+		return "is up: " + mIsUp;
+	}
+	
+	/**
+	 * System is shutting down imminently.  Do any cleanup required.
+	 */
+	@Override
+	public void shutdown() {
+		mIsUp = false;
 	}
 }
