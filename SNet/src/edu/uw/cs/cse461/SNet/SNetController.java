@@ -25,6 +25,7 @@ import edu.uw.cs.cse461.Net.DDNS.DDNSFullNameInterface;
 import edu.uw.cs.cse461.Net.DDNS.DDNSRRecord.ARecord;
 import edu.uw.cs.cse461.Net.DDNS.DDNSResolverService;
 import edu.uw.cs.cse461.Net.RPC.RPCCall;
+import edu.uw.cs.cse461.Net.RPC.RPCCallableMethod;
 import edu.uw.cs.cse461.Net.RPC.RPCService;
 import edu.uw.cs.cse461.SNet.SNetDB461.CommunityRecord;
 import edu.uw.cs.cse461.SNet.SNetDB461.Photo;
@@ -39,7 +40,7 @@ import edu.uw.cs.cse461.util.Log;
  * @author zahorjan
  *
  */
-public class SNetController {
+public class SNetController extends NetLoadableService {
 	private static final String TAG="SNetController";
 	private static final int MAX_LENGTH_PHOTO_FETCH = 16*1024;
 	private static final int MAX_PHOTO_XFER_RETRY = 8;
@@ -48,6 +49,9 @@ public class SNetController {
 	 */
 	private String mDBName;
 
+	private RPCCallableMethod fetchupdates;
+	private RPCCallableMethod fetchphoto;
+	
 	/**
 	 * IMPLEMENTED: Returns the full path name of the DB file.
 	 */
@@ -130,8 +134,18 @@ public class SNetController {
 	// Below here the methods may need implementation, completion, or customization.
 	//////////////////////////////////////////////////////////////////////////////////////
 
-	public SNetController(String dbDirName) {
+	public SNetController(String dbDirName) throws Exception {
+		super("snet", true);
 		mDBName = dbDirName + "/" + new DDNSFullName(NetBase.theNetBase().hostname()) + "snet.db";
+		
+		// register rpc interface
+		fetchupdates = new RPCCallableMethod(this, "_rpcFetchUpdates");
+		fetchphoto = new RPCCallableMethod(this, "_rpcFetchPhoto");
+
+		RPCService rpcService = (RPCService)NetBase.theNetBase().getService("rpc");
+		if ( rpcService == null) throw new Exception("The SNet requires that the RPC resolver service be loaded");
+		rpcService.registerHandler(loadablename(), "fetchUpdates", fetchupdates );
+		rpcService.registerHandler(loadablename(), "fetchPhoto", fetchphoto );
 	}
 
 	/**
@@ -752,5 +766,11 @@ public class SNetController {
 
 	private static int getGenNum(int oldGenNum) {
 		return Math.max(oldGenNum+1, (int) NetBase.theNetBase().now());
+	}
+
+	@Override
+	public String dumpState() {
+		// TODO Auto-generated method stub
+		return null;
 	}
 }
