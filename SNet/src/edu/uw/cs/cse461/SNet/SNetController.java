@@ -145,8 +145,8 @@ public class SNetController extends NetLoadableService {
 		synchronized(loaderLock) {
 			if(!mIsRegistered) {
 				// register rpc interface
-				fetchupdates = new RPCCallableMethod(this, "fetchUpdatesCallee");
-				fetchphoto = new RPCCallableMethod(this, "fetchPhotoCallee");
+				fetchupdates = new RPCCallableMethod(this, "_rpcFetchUpdates");
+				fetchphoto = new RPCCallableMethod(this, "_rpcFetchPhoto");
 		
 				RPCService rpcService = (RPCService)NetBase.theNetBase().getService("rpc");
 				if ( rpcService == null) throw new Exception("The SNet requires that the RPC resolver service be loaded");
@@ -156,6 +156,16 @@ public class SNetController extends NetLoadableService {
 			}
 			mIsUp = true;
 		}
+	}
+	
+	public JSONObject _rpcFetchUpdates(JSONObject args) throws Exception {
+		JSONObject resultObj = this.fetchUpdatesCallee(args);
+		return resultObj;
+	}
+
+	public JSONObject _rpcFetchPhoto(JSONObject args) throws Exception {
+		JSONObject resultObj = this.fetchPhotoCallee(args);
+		return resultObj;
 	}
 
 	/**

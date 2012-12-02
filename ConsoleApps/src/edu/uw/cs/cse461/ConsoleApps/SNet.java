@@ -47,7 +47,7 @@ public class SNet extends NetLoadableConsoleApp implements HTTPProviderInterface
 	 * The constructor registers the RPC-callable methods of the service portion of SNET.
 	 */
 	public SNet() throws Exception {
-		super("snet", true);
+		super("snetapp", true);
 		
 		// check for gallery
 		mGalleryDir = new File(GALLERYDIR + NetBase.theNetBase().hostname());
