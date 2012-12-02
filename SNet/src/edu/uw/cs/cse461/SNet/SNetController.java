@@ -139,13 +139,13 @@ public class SNetController extends NetLoadableService {
 		mDBName = dbDirName + "/" + new DDNSFullName(NetBase.theNetBase().hostname()) + "snet.db";
 		
 		// register rpc interface
-		fetchupdates = new RPCCallableMethod(this, "_rpcFetchUpdates");
-		fetchphoto = new RPCCallableMethod(this, "_rpcFetchPhoto");
+		fetchupdates = new RPCCallableMethod(this, "fetchUpdatesCallee");
+		fetchphoto = new RPCCallableMethod(this, "fetchPhotoCallee");
 
 		RPCService rpcService = (RPCService)NetBase.theNetBase().getService("rpc");
 		if ( rpcService == null) throw new Exception("The SNet requires that the RPC resolver service be loaded");
-		rpcService.registerHandler(loadablename(), "fetchUpdatesCallee", fetchupdates );
-		rpcService.registerHandler(loadablename(), "fetchPhotoCallee", fetchphoto );
+		rpcService.registerHandler(loadablename(), "fetchUpdates", fetchupdates );
+		rpcService.registerHandler(loadablename(), "fetchPhoto", fetchphoto );
 	}
 
 	/**
