@@ -22,6 +22,7 @@ import edu.uw.cs.cse461.Net.RPC.RPCCall;
 import edu.uw.cs.cse461.Net.RPC.RPCServiceInterface;
 import edu.uw.cs.cse461.util.ConfigManager;
 import edu.uw.cs.cse461.util.IPFinder;
+import edu.uw.cs.cse461.util.Log;
 
 
 public class DDNSResolverService extends NetLoadableService implements HTTPProviderInterface, DDNSResolverServiceInterface {
@@ -46,7 +47,7 @@ public class DDNSResolverService extends NetLoadableService implements HTTPProvi
 		
 		// set "my" IP 
 		myIP = IPFinder.getMyIP();
-		
+		Log.i(TAG, myIP);
 		// set up root server ip and port
 		ConfigManager config = NetBase.theNetBase().config();
 		rootServerIP = config.getProperty("ddns.rootserver");

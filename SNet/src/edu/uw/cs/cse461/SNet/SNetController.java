@@ -40,20 +40,16 @@ import edu.uw.cs.cse461.util.Log;
  * @author zahorjan
  *
  */
-public class SNetController extends NetLoadableService {
+public class SNetController {
 	private static final String TAG="SNetController";
 	private static final int MAX_LENGTH_PHOTO_FETCH = 16*1024;
 	private static final int MAX_PHOTO_XFER_RETRY = 8;
 	private static Object loaderLock = new Object();
-	private static boolean mIsUp = false;
-	private static boolean mIsRegistered = false;
+
 	/**
 	 * A full path name to the sqlite database.
 	 */
 	private String mDBName;
-
-	private RPCCallableMethod fetchupdates;
-	private RPCCallableMethod fetchphoto;
 	
 	
 	/**
@@ -139,33 +135,7 @@ public class SNetController extends NetLoadableService {
 	//////////////////////////////////////////////////////////////////////////////////////
 
 	public SNetController(String dbDirName) throws Exception {
-		super("snet", true);
 		mDBName = dbDirName + "/" + new DDNSFullName(NetBase.theNetBase().hostname()) + "snet.db";
-		
-		synchronized(loaderLock) {
-			if(!mIsRegistered) {
-				// register rpc interface
-				fetchupdates = new RPCCallableMethod(this, "_rpcFetchUpdates");
-				fetchphoto = new RPCCallableMethod(this, "_rpcFetchPhoto");
-		
-				RPCService rpcService = (RPCService)NetBase.theNetBase().getService("rpc");
-				if ( rpcService == null) throw new Exception("The SNet requires that the RPC resolver service be loaded");
-				rpcService.registerHandler(loadablename(), "fetchUpdates", fetchupdates );
-				rpcService.registerHandler(loadablename(), "fetchPhoto", fetchphoto );
-				mIsRegistered = true;
-			}
-			mIsUp = true;
-		}
-	}
-	
-	public JSONObject _rpcFetchUpdates(JSONObject args) throws Exception {
-		JSONObject resultObj = this.fetchUpdatesCallee(args);
-		return resultObj;
-	}
-
-	public JSONObject _rpcFetchPhoto(JSONObject args) throws Exception {
-		JSONObject resultObj = this.fetchPhotoCallee(args);
-		return resultObj;
 	}
 
 	/**
@@ -477,10 +447,15 @@ public class SNetController extends NetLoadableService {
 			int myPort = Integer.parseInt(portString);
 			resolver.register(myHostname, myPort);
 			ARecord memConnectInfo = resolver.resolve(mem);
+			Log.i(TAG, memConnectInfo.toString());
 			JSONObject results = null;
-			
-			results = RPCCall.invoke(memConnectInfo.ip(), memConnectInfo.port(), "snet", "fetchUpdates", createFetchUpdatesArgs());
-			
+			System.out.println(createFetchUpdatesArgs());
+			try {
+				results = RPCCall.invoke(memConnectInfo.ip(), memConnectInfo.port(), "snet", "fetchUpdates", createFetchUpdatesArgs());
+			} catch(Exception e) {
+				e.printStackTrace();
+				throw e;
+			}
 			/****************************
 			 * PERFORM COMMUNITY UPDATES
 			 ****************************/
@@ -555,7 +530,6 @@ public class SNetController extends NetLoadableService {
 							fetchPhotoArgs.put("offset", offset);
 							JSONObject dataReturned = null;
 							try {
-								
 								dataReturned = RPCCall.invoke(memConnectInfo.ip(), memConnectInfo.port(), "snet", "fetchPhoto", createFetchUpdatesArgs());
 							} catch(Exception e) {
 								throw new JSONException(e.getMessage());
@@ -610,6 +584,7 @@ public class SNetController extends NetLoadableService {
 				}
 			}
 		} catch(Exception e) {
+			e.printStackTrace();
 			throw new DB461Exception(e.getMessage());
 		}
 	}
@@ -796,18 +771,5 @@ public class SNetController extends NetLoadableService {
 
 	private static int getGenNum(int oldGenNum) {
 		return Math.max(oldGenNum+1, (int) NetBase.theNetBase().now());
-	}
-
-	@Override
-	public String dumpState() {
-		return "is up: " + mIsUp;
-	}
-	
-	/**
-	 * System is shutting down imminently.  Do any cleanup required.
-	 */
-	@Override
-	public void shutdown() {
-		mIsUp = false;
 	}
 }
