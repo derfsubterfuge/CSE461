@@ -291,6 +291,7 @@ public class SNetController extends NetLoadableService {
 				if(db!= null)
 					db.discard();
 			}
+			
 			updatePhotoRecord(memberName, photoFile, newPhotoHash, gen, photoType);
 			/*SNetDB461 db = null;
 			try {
@@ -390,6 +391,9 @@ public class SNetController extends NetLoadableService {
 			}
 
 			//NEW PHOTO HANDLING: if record, doesn't exit, create one; otherwise increment refcount
+			
+			if(newHash == 0)
+				return;
 			PhotoRecord newPhotoRec = db.PHOTOTABLE.readOne(newHash);
 			if(newPhotoRec == null) {
 				newPhotoRec = db.createPhotoRecord();
@@ -758,7 +762,7 @@ public class SNetController extends NetLoadableService {
 			byte[] photoData = new byte[maxLength];
 			int bytesRead = fstream.read(photoData, offset, maxLength);
 			if(bytesRead == -1) {
-				result.put("photodata", (String) null);
+				result.put("photodata", "");
 				result.put("photohash",  pr.hash);
 				result.put("length", 0);
 				result.put("offset", offset);
