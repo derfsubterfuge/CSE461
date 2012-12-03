@@ -477,8 +477,9 @@ public class SNetController extends NetLoadableService {
 			int myPort = Integer.parseInt(portString);
 			resolver.register(myHostname, myPort);
 			ARecord memConnectInfo = resolver.resolve(mem);
+			JSONObject results = null;
 			
-			JSONObject results = RPCCall.invoke(memConnectInfo.ip(), memConnectInfo.port(), "snet", "fetchUpdates", createFetchUpdatesArgs());
+			results = RPCCall.invoke(memConnectInfo.ip(), memConnectInfo.port(), "snet", "fetchUpdates", createFetchUpdatesArgs());
 			
 			/****************************
 			 * PERFORM COMMUNITY UPDATES
@@ -554,6 +555,7 @@ public class SNetController extends NetLoadableService {
 							fetchPhotoArgs.put("offset", offset);
 							JSONObject dataReturned = null;
 							try {
+								
 								dataReturned = RPCCall.invoke(memConnectInfo.ip(), memConnectInfo.port(), "snet", "fetchPhoto", createFetchUpdatesArgs());
 							} catch(Exception e) {
 								throw new JSONException(e.getMessage());
@@ -586,6 +588,7 @@ public class SNetController extends NetLoadableService {
 					}
 					db.PHOTOTABLE.write(photoRec);
 				} catch(Exception e) {
+					e.printStackTrace();
 					if(fstream != null) {
 						try {
 							fstream.close();
@@ -760,7 +763,7 @@ public class SNetController extends NetLoadableService {
 			File photoFile = pr.file;
 			fstream = new FileInputStream(photoFile); //possibly make more efficient
 			byte[] photoData = new byte[maxLength];
-			int bytesRead = fstream.read(photoData, offset, maxLength);
+			int bytesRead = fstream.read(photoData, offset, Math.min(maxLength, MAX_LENGTH_PHOTO_FETCH));
 			if(bytesRead == -1) {
 				result.put("photodata", "");
 				result.put("photohash",  pr.hash);
@@ -773,6 +776,9 @@ public class SNetController extends NetLoadableService {
 				result.put("offset", offset);
 			}
 			return result;
+		} catch(Exception e) {
+			e.printStackTrace();
+			throw e;
 		} finally {
 			if(db != null) {
 				db.discard();
