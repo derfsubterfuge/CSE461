@@ -145,7 +145,7 @@ public class RPCService extends NetLoadableService implements RPCServiceInterfac
 					// with that client.  That socket is returned.
 					try {
 						socket = mServerSocket.accept();
-					
+						Log.i(TAG, "accept socket");
 						socket.setSoTimeout(socketTimeout);
 						(new RPCWorkThread(socket)).start();
 						
@@ -190,6 +190,8 @@ public class RPCService extends NetLoadableService implements RPCServiceInterfac
 				// receive and validate the handshake "connect" request from the caller
 				JSONObject handshake = tcpMsgHandler.readMessageAsJSONObject();
 				
+				Log.i(TAG, "handshake recieved");
+				
 				callId = handshake.getInt("id");
 				if(!handshake.getString("action").equals("connect")) {
 					sendErrorMsg(id, callId, tcpMsgHandler, "Initial message did not have the action 'connect'");
@@ -200,6 +202,7 @@ public class RPCService extends NetLoadableService implements RPCServiceInterfac
 					sendErrorMsg(id, callId, tcpMsgHandler,"Initial message did not have type 'control'");
 					return;
 				}
+				Log.i(TAG, "handshake accepted");
 				
 				// if we've reached here, then we're willing to connect - return the handshake
 				JSONObject returnShake = new JSONObject();
@@ -211,9 +214,12 @@ public class RPCService extends NetLoadableService implements RPCServiceInterfac
 				// send the handshake back to the caller
 				tcpMsgHandler.sendMessage(returnShake);
 				
+				Log.i(TAG, "handshake returned");
+
 				// now read the rpccall request from the caller
 				JSONObject request = tcpMsgHandler.readMessageAsJSONObject();
 				
+				Log.i(TAG, "request read");
 				// make sure this is a method invocation request
 				if(!request.getString("type").equals("invoke")) {
 					sendErrorMsg(id, callId, tcpMsgHandler,"RPCCall request message did not have type 'invoke'.");
@@ -226,7 +232,9 @@ public class RPCService extends NetLoadableService implements RPCServiceInterfac
 				JSONObject args = request.getJSONObject("args");
 				callId = request.getInt("id");
 				// validate the invocation request:
+				Log.i(TAG, "use service: " + app+"."+method);
 				if(!mServiceMethodMap.containsKey(app+"."+method)) {
+					Log.e(TAG, "not registered service: " + app+"."+method);
 					sendErrorMsg(id, callId, tcpMsgHandler, "The requested method is not registered - unable to invoke");
 					return;
 				}
@@ -236,6 +244,7 @@ public class RPCService extends NetLoadableService implements RPCServiceInterfac
 				id = incId();
 				try {
 					returnObj = mServiceMethodMap.get(app+"."+method).handleCall(args);
+					Log.i(TAG, "result message created");
 				} catch (Exception e) {
 					// create and send back error response for method invocation: (different from handshake errormsg!)
 					JSONObject methodErrMsg = new JSONObject();
@@ -260,7 +269,7 @@ public class RPCService extends NetLoadableService implements RPCServiceInterfac
 				response.put("type", "OK");
 				
 				tcpMsgHandler.sendMessage(response);
-				
+				Log.i(TAG, "result message sent");
 			} catch (JSONException e) {
 				sendErrorMsg(id, callId, tcpMsgHandler, e.toString());
 			} catch (IOException e) {

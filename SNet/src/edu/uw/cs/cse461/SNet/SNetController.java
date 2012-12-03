@@ -449,7 +449,7 @@ public class SNetController {
 			ARecord memConnectInfo = resolver.resolve(mem);
 			Log.i(TAG, memConnectInfo.toString());
 			JSONObject results = null;
-			System.out.println(createFetchUpdatesArgs());
+			//System.out.println(createFetchUpdatesArgs());
 			try {
 				results = RPCCall.invoke(memConnectInfo.ip(), memConnectInfo.port(), "snet", "fetchUpdates", createFetchUpdatesArgs());
 			} catch(Exception e) {
