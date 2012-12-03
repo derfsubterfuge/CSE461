@@ -126,8 +126,15 @@ public class RPCCall extends NetLoadableService {
 			JSONObject handshakeResponse = tcpMsgHandler.readMessageAsJSONObject();
 			
 			// if this is an ERROR message, throw exception passing along the given error message
-			if (handshakeResponse.getString("type").equals("ERROR"))
-				throw new IOException(handshakeResponse.getString("msg"));
+			if (handshakeResponse.getString("type").equals("ERROR")) {
+				String msg = null;
+				try {
+					msg = handshakeResponse.getString("msg");
+				} catch(JSONException e) {
+					msg = handshakeResponse.getString("message");
+				}
+				throw new IOException(msg);
+			}
 			// if its not an ERROR message must be OK 
 			if (!handshakeResponse.getString("type").equals("OK"))
 				throw new IOException("Error making handshake with connection.");
@@ -151,8 +158,15 @@ public class RPCCall extends NetLoadableService {
 			JSONObject rpcReturn = tcpMsgHandler.readMessageAsJSONObject();
 			
 			// if this is an ERROR message, throw exception passing along the given error message
-			if (rpcReturn.getString("type").equals("ERROR"))
-				throw new IOException(rpcReturn.getString("message"));
+			if (rpcReturn.getString("type").equals("ERROR")) {
+				String msg = null;
+				try {
+					msg = rpcReturn.getString("msg");
+				} catch(JSONException e) {
+					msg = rpcReturn.getString("message");
+				}
+				throw new IOException(msg);
+			}
 			// if its not an ERROR message must be OK 
 			if (!rpcReturn.getString("type").equals("OK"))
 				throw new IOException("Error invoking remote procedure.");

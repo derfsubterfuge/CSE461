@@ -24,9 +24,10 @@ public final class R {
         public static final int appmanager_myiptext=0x7f080001;
         public static final int appmanager_scrollview=0x7f080002;
         public static final int appmanager_scrollviewlayout=0x7f080003;
+        public static final int backbutton=0x7f08001f;
         public static final int button1=0x7f080005;
-        public static final int button2=0x7f08001f;
-        public static final int chosenpicture=0x7f080021;
+        public static final int button2=0x7f080020;
+        public static final int chosenpicture=0x7f080022;
         public static final int configspinner=0x7f080004;
         public static final int contactbutton=0x7f08001d;
         public static final int echoraw_gobutton=0x7f08000d;
@@ -41,9 +42,9 @@ public final class R {
         public static final int gobutton=0x7f080011;
         public static final int iptext=0x7f08000f;
         public static final int memberspinner=0x7f08001a;
-        public static final int menu_settings=0x7f080022;
+        public static final int menu_settings=0x7f080023;
         public static final int myiptext=0x7f080013;
-        public static final int mypicture=0x7f080020;
+        public static final int mypicture=0x7f080021;
         public static final int outputtext=0x7f080012;
         public static final int pingtcpmessagehandler_gobutton=0x7f080018;
         public static final int pingtcpmessagehandler_iptext=0x7f080016;
