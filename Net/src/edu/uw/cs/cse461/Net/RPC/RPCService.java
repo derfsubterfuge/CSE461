@@ -24,7 +24,7 @@ import edu.uw.cs.cse461.util.Log;
  */
 public class RPCService extends NetLoadableService implements RPCServiceInterface {
 	private static final String TAG="RPCService";
-	private static final int MAX_READ_SIZE = 100000; //bytes
+	public static final int MAX_READ_SIZE = 4*1024*1024; //bytes
 	private Map<String, RPCCallableMethod> mServiceMethodMap = new HashMap<String, RPCCallableMethod>();
 	private ServerSocket mServerSocket = null;
 	private boolean mIsUp = false;
@@ -190,7 +190,7 @@ public class RPCService extends NetLoadableService implements RPCServiceInterfac
 				// receive and validate the handshake "connect" request from the caller
 				JSONObject handshake = tcpMsgHandler.readMessageAsJSONObject();
 				
-				Log.i(TAG, "handshake recieved");
+				//Log.i(TAG, "handshake recieved");
 				
 				callId = handshake.getInt("id");
 				if(!handshake.getString("action").equals("connect")) {
@@ -202,7 +202,7 @@ public class RPCService extends NetLoadableService implements RPCServiceInterfac
 					sendErrorMsg(id, callId, tcpMsgHandler,"Initial message did not have type 'control'");
 					return;
 				}
-				Log.i(TAG, "handshake accepted");
+				//Log.i(TAG, "handshake accepted");
 				
 				// if we've reached here, then we're willing to connect - return the handshake
 				JSONObject returnShake = new JSONObject();
@@ -214,12 +214,12 @@ public class RPCService extends NetLoadableService implements RPCServiceInterfac
 				// send the handshake back to the caller
 				tcpMsgHandler.sendMessage(returnShake);
 				
-				Log.i(TAG, "handshake returned");
+				//Log.i(TAG, "handshake returned");
 
 				// now read the rpccall request from the caller
 				JSONObject request = tcpMsgHandler.readMessageAsJSONObject();
 				
-				Log.i(TAG, "request read");
+				//Log.i(TAG, "request read");
 				// make sure this is a method invocation request
 				if(!request.getString("type").equals("invoke")) {
 					sendErrorMsg(id, callId, tcpMsgHandler,"RPCCall request message did not have type 'invoke'.");
@@ -269,7 +269,7 @@ public class RPCService extends NetLoadableService implements RPCServiceInterfac
 				response.put("type", "OK");
 				
 				tcpMsgHandler.sendMessage(response);
-				Log.i(TAG, "result message sent");
+				//Log.i(TAG, "result message sent");
 			} catch (JSONException e) {
 				sendErrorMsg(id, callId, tcpMsgHandler, e.toString());
 			} catch (IOException e) {

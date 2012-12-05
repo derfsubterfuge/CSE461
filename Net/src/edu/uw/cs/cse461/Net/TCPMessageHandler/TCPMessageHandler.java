@@ -163,9 +163,9 @@ public class TCPMessageHandler implements TCPMessageHandlerInterface {
 		}
 		
 		int msgLen = byteToInt(msgLenBytes);
-		if(msgLen < 0 || msgLen > maxReadLength)
+		if(msgLen < 0 || msgLen > maxReadLength) {
 			throw new IOException("Recieved invalid message length: " + msgLen);
-		
+		}
 		byte[] msgHolder = new byte[msgLen];
 		int totalBytesRead = 0;
 		while(totalBytesRead < msgLen) {

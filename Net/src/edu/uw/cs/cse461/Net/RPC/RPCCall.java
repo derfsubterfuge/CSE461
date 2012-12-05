@@ -33,7 +33,7 @@ import edu.uw.cs.cse461.util.Log;
 public class RPCCall extends NetLoadableService {
 	private static final String TAG="RPCCall";
 	private static int mId = 0;
-	private static final int MAX_READ_SIZE = 100000; //bytes
+	private static final int MAX_READ_SIZE = RPCService.MAX_READ_SIZE; //bytes
 	
 	//-------------------------------------------------------------------------------------------
 	//-------------------------------------------------------------------------------------------

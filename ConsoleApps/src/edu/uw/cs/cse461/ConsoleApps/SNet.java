@@ -3,6 +3,7 @@ package edu.uw.cs.cse461.ConsoleApps;
 import java.io.File;
 import java.util.Scanner;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import edu.uw.cs.cse461.DB461.DB461.DB461Exception;
@@ -65,7 +66,7 @@ public class SNet extends NetLoadableConsoleApp implements HTTPProviderInterface
 		// register rpc interface
 		fetchupdates = new RPCCallableMethod(this, "_rpcFetchUpdates");
 		fetchphoto = new RPCCallableMethod(this, "_rpcFetchPhoto");
-
+		
 		RPCService rpcService = (RPCService)NetBase.theNetBase().getService("rpc");
 		if ( rpcService == null) throw new Exception("The SNet app requires that the RPC resolver service be loaded");
 		rpcService.registerHandler(loadablename(), "fetchUpdates", fetchupdates );
@@ -146,7 +147,7 @@ public class SNet extends NetLoadableConsoleApp implements HTTPProviderInterface
 				}
 				
 			} catch (Exception e) {
-				e.printStackTrace();
+				//e.printStackTrace();
 				Log.e(TAG, "Caught exception: " + e.getMessage());
 				//scanner.skip(".*\n");  // try to flush rest of line
 			}
@@ -155,12 +156,16 @@ public class SNet extends NetLoadableConsoleApp implements HTTPProviderInterface
 	}
 	
 	public JSONObject _rpcFetchUpdates(JSONObject args) throws Exception {
+		Log.i(TAG, "started fetch updates");
 		JSONObject resultObj = mSNetController.fetchUpdatesCallee(args);
+		Log.i(TAG, "finished fetch updates");
 		return resultObj;
 	}
 
 	public JSONObject _rpcFetchPhoto(JSONObject args) throws Exception {
+		Log.i(TAG, "started fetch photo");
 		JSONObject resultObj = mSNetController.fetchPhotoCallee(args);
+		Log.i(TAG, "started fetch photo");
 		return resultObj;
 	}
 }

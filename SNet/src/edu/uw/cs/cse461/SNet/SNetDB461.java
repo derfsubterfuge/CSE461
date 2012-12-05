@@ -416,7 +416,30 @@ public class SNetDB461 extends DB461SQLite {
 	 * </ul>
 	 */
 	public void checkAndFixDB(File galleryDir) throws DB461Exception {
-		HashMap<Integer,Integer> photoRefCntMap = new HashMap<Integer,Integer>();
+		//changed to reset database
+		
+		RecordSet<CommunityRecord> friendVec = COMMUNITYTABLE.readAll();
+		for ( CommunityRecord r : friendVec ) {
+			COMMUNITYTABLE.delete(r.name.toString());
+		}
+		
+		RecordSet<PhotoRecord> photoVec = PHOTOTABLE.readAll();
+		for ( PhotoRecord r : photoVec ) {
+			PHOTOTABLE.delete(r.hash);
+		}
+		
+		if ( galleryDir == null ) {
+			Log.w(TAG, "Gallery directory arg is null.  Skipping check for superfluous files.");
+			return;
+		}
+		
+		File[] fileList = galleryDir.listFiles();
+		if ( fileList == null ) return;
+		for ( File file : fileList ) {
+			if ( file.isFile() )
+				file.delete();
+		}
+		/*HashMap<Integer,Integer> photoRefCntMap = new HashMap<Integer,Integer>();
 		HashSet<File> referencedPhotoFileSet = new HashSet<File>();
 
 		// Collect info on refs to photos
@@ -483,6 +506,6 @@ public class SNetDB461 extends DB461SQLite {
 			if ( referencedPhotoFileSet.contains(file) ) continue;
 			Log.w(TAG, "There are no references to gallery file " + file.getAbsolutePath() + ". Deleting file.");
 			file.delete();
-		}
+		}*/
 	}
 }

@@ -1,5 +1,6 @@
 package edu.uw.cs.cse461.SNet;
 
+import java.io.BufferedInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
@@ -19,13 +20,11 @@ import org.json.JSONObject;
 import edu.uw.cs.cse461.DB461.DB461.DB461Exception;
 import edu.uw.cs.cse461.DB461.DB461.RecordSet;
 import edu.uw.cs.cse461.Net.Base.NetBase;
-import edu.uw.cs.cse461.Net.Base.NetLoadable.NetLoadableService;
 import edu.uw.cs.cse461.Net.DDNS.DDNSFullName;
 import edu.uw.cs.cse461.Net.DDNS.DDNSFullNameInterface;
 import edu.uw.cs.cse461.Net.DDNS.DDNSRRecord.ARecord;
 import edu.uw.cs.cse461.Net.DDNS.DDNSResolverService;
 import edu.uw.cs.cse461.Net.RPC.RPCCall;
-import edu.uw.cs.cse461.Net.RPC.RPCCallableMethod;
 import edu.uw.cs.cse461.Net.RPC.RPCService;
 import edu.uw.cs.cse461.SNet.SNetDB461.CommunityRecord;
 import edu.uw.cs.cse461.SNet.SNetDB461.Photo;
@@ -42,9 +41,8 @@ import edu.uw.cs.cse461.util.Log;
  */
 public class SNetController {
 	private static final String TAG="SNetController";
-	private static final int MAX_LENGTH_PHOTO_FETCH = 16*1024;
-	private static final int MAX_PHOTO_XFER_RETRY = 8;
-	private static Object loaderLock = new Object();
+	private static final int MAX_LENGTH_PHOTO_FETCH = NetBase.theNetBase().config().getAsInt("snet.fetchphoto_maxlength", RPCService.MAX_READ_SIZE/2, 1024, RPCService.MAX_READ_SIZE*3/4-4*1024, TAG);
+	private static final int MAX_PHOTO_XFER_RETRY = 4;
 
 	/**
 	 * A full path name to the sqlite database.
@@ -121,6 +119,7 @@ public class SNetController {
 		try {
 			db = new SNetDB461(mDBName);
 			db.checkAndFixDB(galleryDir);
+			registerBaseUsers(new DDNSFullName(NetBase.theNetBase().hostname()));
 		} catch (Exception e) {
 			throw new DB461Exception("fixDB caught exception: "+ e.getMessage());
 		}
@@ -245,7 +244,7 @@ public class SNetController {
 			
 			//if file isn't in the gallery directory, or doesn't have its hash as its name, make a copy of it
 			if(!photoFile.getParentFile().equals(galleryDir) || !photoFile.getName().equals(newPhotoHash)) {
-				photoFile = copyToGallery(photoFile, newPhotoHash+"", galleryDir);
+				photoFile = copyToGallery(photoFile, newPhotoHash+".jpg", galleryDir);
 			}
 			
 			SNetDB461 db = null;
@@ -263,60 +262,6 @@ public class SNetController {
 			}
 			
 			updatePhotoRecord(memberName, photoFile, newPhotoHash, gen, photoType);
-			/*SNetDB461 db = null;
-			try {
-				db = new SNetDB461(this.DBName());
-				CommunityRecord memRec = db.COMMUNITYTABLE.readOne(memberName.toString());
-				if(memRec == null) {
-					throw new DB461Exception("Member is not in the database: " + memberName.toString());
-				}
-	
-				//OLD PHOTO HANDLING: Decrement reference count on any existing chosen photo and
-				//delete underyling file if appropriate.
-				int oldPhotoHash;
-				if(photoType.equals("chosen"))
-					oldPhotoHash = memRec.chosenPhotoHash;
-				else //my photo
-					oldPhotoHash = memRec.myPhotoHash;
-	
-				if(oldPhotoHash != 0) { //if old photo exists
-					PhotoRecord oldPhotoRec = db.PHOTOTABLE.readOne(oldPhotoHash);
-					if(oldPhotoRec == null) {
-						throw new DB461Exception("Old photo is not in the database. Hash: " + oldPhotoHash);
-					}
-	
-					oldPhotoRec.refCount--;
-					if(oldPhotoRec.refCount <= 0) {
-						if(oldPhotoRec.file != null && oldPhotoRec.file.isFile())
-							oldPhotoRec.file.delete();
-						db.PHOTOTABLE.delete(oldPhotoHash);
-					} else {
-						db.PHOTOTABLE.write(oldPhotoRec);
-					}
-				}
-	
-				//NEW PHOTO HANDLING: if record, doesn't exit, create one; otherwise increment refcount
-				PhotoRecord newPhotoRec = db.PHOTOTABLE.readOne(newPhotoHash);
-				if(newPhotoRec == null) {
-					newPhotoRec = db.createPhotoRecord();
-					newPhotoRec.file = photoFile;
-					newPhotoRec.hash = newPhotoHash;
-					newPhotoRec.refCount = 1;
-				} else {
-					newPhotoRec.refCount++;
-				}
-				db.PHOTOTABLE.write(newPhotoRec);
-	
-				if(photoType.equals("chosen"))
-					memRec.chosenPhotoHash= newPhotoHash;
-				else //my photo
-					memRec.myPhotoHash = newPhotoHash;
-				memRec.generation = getGenNum(memRec.generation);
-				db.COMMUNITYTABLE.write(memRec);
-			} finally {
-				if(db != null)
-					db.discard();
-			}*/
 		} catch(IOException e) {
 			throw new DB461Exception(e.getMessage());
 		}
@@ -361,20 +306,19 @@ public class SNetController {
 			}
 
 			//NEW PHOTO HANDLING: if record, doesn't exit, create one; otherwise increment refcount
-			
-			if(newHash == 0)
-				return;
-			PhotoRecord newPhotoRec = db.PHOTOTABLE.readOne(newHash);
-			if(newPhotoRec == null) {
-				newPhotoRec = db.createPhotoRecord();
-				newPhotoRec.file = newPhotoFile;
-				newPhotoRec.hash = newHash;
-				newPhotoRec.refCount = 1;
-			} else {
-				newPhotoRec.refCount++;
+			if(newHash != 0) {
+				PhotoRecord newPhotoRec = db.PHOTOTABLE.readOne(newHash);
+				if(newPhotoRec == null) {
+					newPhotoRec = db.createPhotoRecord();
+					newPhotoRec.file = newPhotoFile;
+					newPhotoRec.hash = newHash;
+					newPhotoRec.refCount = 1;
+				} else {
+					newPhotoRec.refCount++;
+				}
+				db.PHOTOTABLE.write(newPhotoRec);
 			}
-			db.PHOTOTABLE.write(newPhotoRec);
-
+			
 			if(photoType.equals("chosen"))
 				memRec.chosenPhotoHash= newHash;
 			else //my photo
@@ -438,6 +382,7 @@ public class SNetController {
 				if (db != null)
 					db.discard();
 			}
+			
 			DDNSResolverService resolver = (DDNSResolverService)NetBase.theNetBase().getService("ddnsresolver");
 			DDNSFullNameInterface myHostname = new DDNSFullName(NetBase.theNetBase().config().getProperty("net.hostname"));
 			String portString = NetBase.theNetBase().config().getProperty("ddns.rootport");
@@ -448,14 +393,9 @@ public class SNetController {
 			resolver.register(myHostname, myPort);
 			ARecord memConnectInfo = resolver.resolve(mem);
 			Log.i(TAG, memConnectInfo.toString());
-			JSONObject results = null;
-			//System.out.println(createFetchUpdatesArgs());
-			try {
-				results = RPCCall.invoke(memConnectInfo.ip(), memConnectInfo.port(), "snet", "fetchUpdates", createFetchUpdatesArgs());
-			} catch(Exception e) {
-				e.printStackTrace();
-				throw e;
-			}
+			
+			JSONObject results = RPCCall.invoke(memConnectInfo.ip(), memConnectInfo.port(), "snet", "fetchUpdates", createFetchUpdatesArgs(mem));
+			
 			/****************************
 			 * PERFORM COMMUNITY UPDATES
 			 ****************************/
@@ -517,7 +457,7 @@ public class SNetController {
 				fetchPhotoArgs.put("maxlength", MAX_LENGTH_PHOTO_FETCH);
 				int numBytesRecieved = -1;
 				int offset = 0;
-				File newPhoto = new File(galleryDir, photoHash+"");
+				File newPhoto = new File(galleryDir, photoHash+".jpg");
 				OutputStream fstream = null;
 				db = null;
 				try {
@@ -530,7 +470,11 @@ public class SNetController {
 							fetchPhotoArgs.put("offset", offset);
 							JSONObject dataReturned = null;
 							try {
-								dataReturned = RPCCall.invoke(memConnectInfo.ip(), memConnectInfo.port(), "snet", "fetchPhoto", createFetchUpdatesArgs());
+								Log.i(TAG, "SENT PHOTO REQUEST: " + fetchPhotoArgs.toString());
+								dataReturned = RPCCall.invoke(memConnectInfo.ip(), memConnectInfo.port(), "snet", "fetchPhoto", fetchPhotoArgs);
+								String photodata = (String) dataReturned.remove("photodata");
+								Log.i(TAG, "RETURNED PHOTO REQUEST: " + dataReturned.toString());
+								dataReturned.put("photodata", photodata);
 							} catch(Exception e) {
 								throw new JSONException(e.getMessage());
 							}
@@ -544,11 +488,18 @@ public class SNetController {
 								byte[] bytesRecieved = Base64.decode(dataReturned.getString("photodata"));
 								bytesRecieved = Arrays.copyOf(bytesRecieved, numBytesRecieved);
 								fstream.write(bytesRecieved);
+								offset += numBytesRecieved;
 							}
 							attempts = 0;
 						} catch(JSONException e) {
+							//e.printStackTrace();
 							if(++attempts > MAX_PHOTO_XFER_RETRY)
 								throw new DB461Exception("could not complete photo transfer");
+							try {
+								Thread.sleep((int) (Math.random()*attempts*1000 + 100));
+							} catch(InterruptedException e1) {
+								//shouldn't happen
+							}
 						}
 					} while(numBytesRecieved > 0);
 					//if fstream fail, delete file
@@ -562,7 +513,7 @@ public class SNetController {
 					}
 					db.PHOTOTABLE.write(photoRec);
 				} catch(Exception e) {
-					e.printStackTrace();
+					//e.printStackTrace();
 					if(fstream != null) {
 						try {
 							fstream.close();
@@ -584,12 +535,12 @@ public class SNetController {
 				}
 			}
 		} catch(Exception e) {
-			e.printStackTrace();
+			//e.printStackTrace();
 			throw new DB461Exception(e.getMessage());
 		}
 	}
 	
-	private JSONObject createFetchUpdatesArgs() throws DB461Exception {
+	private JSONObject createFetchUpdatesArgs(String dest) throws DB461Exception, JSONException {
 		SNetDB461 db = null;
 		try {
 			db = new SNetDB461(this.DBName());
@@ -599,14 +550,10 @@ public class SNetController {
 			RecordSet<CommunityRecord> community = db.COMMUNITYTABLE.readAll();
 			for(CommunityRecord person : community) {
 				JSONObject personInfo = new JSONObject();
-				try {
-					personInfo.put("generation", person.generation);
-					personInfo.put("myphotohash", person.myPhotoHash);
-					personInfo.put("chosenphotohash", person.chosenPhotoHash);
-					communityArg.put(person.name.toString(), personInfo);
-				} catch(JSONException e) {
-					//shouldn't happen
-				}
+				personInfo.put("generation", person.generation);
+				personInfo.put("myphotohash", person.myPhotoHash);
+				personInfo.put("chosenphotohash", person.chosenPhotoHash);
+				communityArg.put(person.name.toString(), personInfo);
 				
 				if(person.isFriend) {
 					String[] photoTypes = {"chosen", "my"};
@@ -618,7 +565,7 @@ public class SNetController {
 							hash = person.myPhotoHash;
 						}
 						
-						if(!needPhotosSet.contains(hash)) {
+						if(hash != 0 && !needPhotosSet.contains(hash)) {
 							PhotoRecord photoRec = db.PHOTOTABLE.readOne(hash);
 							if(photoRec == null)
 								throw new DB461Exception("photorec reference is null, which shouldn't be the case");
@@ -640,14 +587,19 @@ public class SNetController {
 				needPhotosArg.put(photoHash);
 			}
 			
-			try {
-				fetchUpdatesArgs.put("community", communityArg);
-				fetchUpdatesArgs.put("needphotos", needPhotosArg);
-			} catch(JSONException e) {
-				//shouldn't happen
-			}
+			fetchUpdatesArgs.put("community", communityArg);
+			fetchUpdatesArgs.put("needphotos", needPhotosArg);
+			fetchUpdatesArgs.put("srcname", NetBase.theNetBase().hostname());
+			fetchUpdatesArgs.put("destname", dest);
+			
 			return fetchUpdatesArgs;
-		} finally {
+		} /*catch(DB461Exception e) {
+			e.printStackTrace();
+			throw e;
+		} catch(JSONException e) {
+			e.printStackTrace();
+			throw e;
+		}*/ finally {
 			if(db != null)
 				db.discard();
 		}
@@ -710,7 +662,7 @@ public class SNetController {
 			if(db != null)
 				db.discard();
 		}
-	}	
+	} //double checked
 
 	/**IMPLEMENTED:
 	 * Callee side of fetchPhoto (fetch one photo).  To fetch an image file, call this
@@ -722,13 +674,18 @@ public class SNetController {
 	 * @throws Exception
 	 */
 	synchronized public JSONObject fetchPhotoCallee(JSONObject args) throws Exception { 
+		Log.i(TAG, "started fetch updates");
 		SNetDB461 db = null;
-		FileInputStream fstream = null;
+		BufferedInputStream fstream = null;
 		try {
 			JSONObject result = new JSONObject();
 			int photoHash = args.getInt("photohash");
 			int maxLength = args.getInt("maxlength");
 			int offset = args.getInt("offset");
+			if(maxLength < 0)
+				throw new JSONException("maxlength should be greater than 0: " + maxLength);
+			if(offset < 0)
+				throw new JSONException("offset should be greater than 0: " + offset);
 			db = new SNetDB461(this.DBName());
 			PhotoRecord pr = db.PHOTOTABLE.readOne(photoHash);
 			if(pr == null) {
@@ -736,25 +693,40 @@ public class SNetController {
 			}
 
 			File photoFile = pr.file;
-			fstream = new FileInputStream(photoFile); //possibly make more efficient
-			byte[] photoData = new byte[maxLength];
-			int bytesRead = fstream.read(photoData, offset, Math.min(maxLength, MAX_LENGTH_PHOTO_FETCH));
-			if(bytesRead == -1) {
+			fstream =  new BufferedInputStream(new FileInputStream(photoFile)); //possibly make more efficient
+			byte[] photoData =  new byte[MAX_LENGTH_PHOTO_FETCH];
+			int toOffset = offset;
+			int bytesRead = 0;
+			while(toOffset > 0 && bytesRead >= 0) {
+				bytesRead = fstream.read(photoData, 0, Math.min(toOffset, MAX_LENGTH_PHOTO_FETCH));
+				toOffset -= bytesRead;
+			}
+			int bytesToRead = Math.min(maxLength, MAX_LENGTH_PHOTO_FETCH);
+			photoData = new byte[bytesToRead];
+			int totalBytesRead = 0;
+			while(bytesRead >= 0 && totalBytesRead < bytesToRead) {
+				bytesRead = fstream.read(photoData, totalBytesRead, bytesToRead-totalBytesRead);
+				if(bytesRead > 0)
+					totalBytesRead += bytesRead;
+			}
+			
+			if(totalBytesRead == 0) {
 				result.put("photodata", "");
 				result.put("photohash",  pr.hash);
 				result.put("length", 0);
 				result.put("offset", offset);
 			} else {
-				result.put("photodata", Base64.encodeBytes(photoData, 0, bytesRead));
+				result.put("photodata", Base64.encodeBytes(photoData, 0, totalBytesRead));
 				result.put("photohash", pr.hash);
-				result.put("length", bytesRead);
+				result.put("length", totalBytesRead);
 				result.put("offset", offset);
 			}
+			Log.d(TAG, "fetch photo result: " + result.toString());
 			return result;
-		} catch(Exception e) {
+		}/* catch(Exception e) {
 			e.printStackTrace();
 			throw e;
-		} finally {
+		}*/ finally {
 			if(db != null) {
 				db.discard();
 			}
@@ -767,7 +739,7 @@ public class SNetController {
 				}
 			}
 		}
-	}
+	} 
 
 	private static int getGenNum(int oldGenNum) {
 		return Math.max(oldGenNum+1, (int) NetBase.theNetBase().now());
