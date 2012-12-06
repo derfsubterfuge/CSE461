@@ -119,7 +119,11 @@ public class SNetController {
 		try {
 			db = new SNetDB461(mDBName);
 			db.checkAndFixDB(galleryDir);
-			registerBaseUsers(new DDNSFullName(NetBase.theNetBase().hostname()));
+			DDNSFullName me = new DDNSFullName(NetBase.theNetBase().hostname());
+			registerBaseUsers(me);
+			CommunityRecord myRec = db.COMMUNITYTABLE.readOne(me.toString());
+			myRec.generation = getGenNum(myRec.generation);
+			db.COMMUNITYTABLE.write(myRec);
 		} catch (Exception e) {
 			throw new DB461Exception("fixDB caught exception: "+ e.getMessage());
 		}
@@ -406,13 +410,15 @@ public class SNetController {
 			Iterator comUpdateKeys = communityUpdates.keys();
 			while(comUpdateKeys.hasNext()) {
 				String person = (String) comUpdateKeys.next();
+				
 				JSONObject personInfo = communityUpdates.getJSONObject(person);
-				DDNSFullNameInterface personFullName = new DDNSFullName(person);
+				DDNSFullName personFullName = new DDNSFullName(person);
 				
 				//get all arguments first just in case something is wrong, an error will be thrown
 				int chosenPhotoHash =  personInfo.getInt("chosenphotohash");
 				int myPhotoHash = personInfo.getInt("myphotohash");
 				int gen =  personInfo.getInt("generation");
+				int ourGen;
 				
 				PhotoRecord myPhoto = null;
 				PhotoRecord chosenPhoto = null;
@@ -420,17 +426,24 @@ public class SNetController {
 				try {
 					db = new SNetDB461(this.DBName());
 					//if they aren't in the database, put them in it
-					db.registerMember(new DDNSFullName(person));
-					
+					db.registerMember(personFullName);
+					//shouldn't be null because of prev line
+					CommunityRecord cr = db.COMMUNITYTABLE.readOne(person);
+					ourGen = cr.generation;
 					myPhoto = db.PHOTOTABLE.readOne(myPhotoHash);
 					chosenPhoto = db.PHOTOTABLE.readOne(chosenPhotoHash);
 				} finally {
 					if(db != null)
 						db.discard();
 				}
-				
-				updatePhotoRecord(personFullName, myPhoto == null ? null : myPhoto.file, myPhotoHash, gen, "my");
-				updatePhotoRecord(personFullName, chosenPhoto == null ? null : chosenPhoto.file, chosenPhotoHash, gen, "chosen");
+				if(person.equals(NetBase.theNetBase().hostname())) {
+					Log.d(TAG, "our gen: " + ourGen);
+					Log.d(TAG, "their gen: " + gen);
+				}
+				if(ourGen < gen) {
+					updatePhotoRecord(personFullName, myPhoto == null ? null : myPhoto.file, myPhotoHash, gen, "my");
+					updatePhotoRecord(personFullName, chosenPhoto == null ? null : chosenPhoto.file, chosenPhotoHash, gen, "chosen");
+				}
 			}
 			
 			/****************************
@@ -630,7 +643,7 @@ public class SNetController {
 					if(memInfoOurs != null) {
 						JSONObject memInfoTheirs = community.getJSONObject(memName);
 						int memGenNumTheirs = memInfoTheirs.getInt("generation");
-
+						
 						if(memInfoOurs.generation > memGenNumTheirs) {
 							JSONObject memInfoPut = new JSONObject();
 							memInfoPut.put("generation", memInfoOurs.generation);

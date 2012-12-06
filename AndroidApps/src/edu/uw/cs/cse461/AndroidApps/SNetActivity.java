@@ -30,6 +30,7 @@ import edu.uw.cs.cse461.Net.RPC.RPCCallableMethod;
 import edu.uw.cs.cse461.Net.RPC.RPCService;
 import edu.uw.cs.cse461.SNet.SNetController;
 import edu.uw.cs.cse461.SNet.SNetDB461;
+import edu.uw.cs.cse461.SNet.SNetDB461.PhotoRecord;
 import edu.uw.cs.cse461.util.ContextManager;
 import edu.uw.cs.cse461.SNet.SNetDB461.CommunityRecord;
 import edu.uw.cs.cse461.DB461.DB461.RecordSet;
@@ -55,8 +56,7 @@ public class SNetActivity extends NetLoadableAndroidApp {
 		super("snet", true);
 		Log.d(TAG, "constructor");
 		if(onCreateException != null)
-			throw onCreateException;
-		
+			throw onCreateException;	
 	}
 	
     /** Called when the activity is first created. */
@@ -74,9 +74,7 @@ public class SNetActivity extends NetLoadableAndroidApp {
 		dbPath = SD_CARD_PATH;
 		try {
 			controller = new SNetController(dbPath);
-			//TODO: remove following line
-			//Log.d(TAG, "DELETE DB: " + (new File(controller.DBName()).delete()));
-			
+			Log.d(TAG, "Couldn't unlock db... deleting DB: " + (new File(controller.DBName()).delete()));
 			// register rpc interface
 			fetchupdates = new RPCCallableMethod(this, "_rpcFetchUpdates");
 			fetchphoto = new RPCCallableMethod(this, "_rpcFetchPhoto");
@@ -193,6 +191,8 @@ public class SNetActivity extends NetLoadableAndroidApp {
 			e.printStackTrace();
 			Log.e(TAG, e.getMessage());
 		}
+    	
+    	sendBroadcast(new Intent (Intent.ACTION_MEDIA_MOUNTED, Uri.parse("file://" + Environment.getExternalStorageDirectory())));
     	updateSpinner();
     }
     
@@ -202,6 +202,8 @@ public class SNetActivity extends NetLoadableAndroidApp {
     	
     	try {
 			controller.fixDB(galleryDir);
+	    	sendBroadcast(new Intent (Intent.ACTION_MEDIA_MOUNTED, Uri.parse("file://" + Environment.getExternalStorageDirectory())));
+
 			updateSpinner();
 		} catch (DB461Exception e) {
 			Log.e(TAG, e.getMessage());
@@ -222,6 +224,8 @@ public class SNetActivity extends NetLoadableAndroidApp {
     
     
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+    	if(data == null)
+    		return;
     	Log.d(TAG, "got a result!");
     	switch (requestCode) {
 	    	case CAPTURE_IMAGE_ACTIVITY_REQUEST_CODE:    		
@@ -229,11 +233,11 @@ public class SNetActivity extends NetLoadableAndroidApp {
 	    	    Bitmap photoBmp = (Bitmap)data.getExtras().get("data");
     		    ImageView myImage = (ImageView) findViewById(R.id.mypicture);
     		    myImage.setImageBitmap(photoBmp);
-    		    
+    		    File myPhoto = null;
 				try {
 					// create file for it
 
-					File myPhoto = File.createTempFile("myphoto", ".jpg", galleryDir);
+					myPhoto = File.createTempFile("myphoto", ".jpg", galleryDir);
 					FileOutputStream myPhotoStream = new FileOutputStream(myPhoto);
 					
 					// write the data to that file
@@ -242,11 +246,15 @@ public class SNetActivity extends NetLoadableAndroidApp {
 					// update the db
 					controller.newMyPhoto(myName, myPhoto.getAbsolutePath(), galleryDir);
 					
+					
 				} catch (IOException e) {
 					e.printStackTrace();
 					Log.e(TAG, e.getMessage());
 				} catch (DB461Exception e) {
 					Log.e(TAG, e.getMessage());
+				} finally {
+					if(myPhoto != null)
+						myPhoto.delete();
 				}
        		    
 	    		// Try to update gallery viewer
@@ -300,39 +308,44 @@ public class SNetActivity extends NetLoadableAndroidApp {
         SNetDB461 db = null;
         try {
            db = new SNetDB461(controller.DBName());
-           /*controller.registerBaseUsers(myName);	// no-op if db already exists, ok to leave in for all cases
+           controller.registerBaseUsers(myName);	// no-op if db already exists, ok to leave in for all cases
     
            SNetDB461.CommunityTable community = db.COMMUNITYTABLE;
     	   SNetDB461.PhotoTable photos = db.PHOTOTABLE;
            CommunityRecord myrecord = community.readOne(myName.toString());
            // fetch myphoto: 
+          
            int myPhotoHash = myrecord.myPhotoHash;
+           Log.d(TAG, "my photo hash: " + myPhotoHash);
            if (myPhotoHash != 0) {	// display my photo
         	   // look up file path in photo table
         	   PhotoRecord myPhotoRecord = photos.readOne(myPhotoHash);
-        	   File imgFile = myPhotoRecord.file;
-        	   if(imgFile.exists()){
-        		   Bitmap myBitmap = BitmapFactory.decodeFile(imgFile.getAbsolutePath());
-				
-        		   ImageView chosenImage = (ImageView) findViewById(R.id.mypicture);
-				   chosenImage.setImageBitmap(myBitmap);
+        	   if(myPhotoRecord != null) {
+	        	   File imgFile = myPhotoRecord.file;
+	        	   if(imgFile != null && imgFile.isFile()){
+	        		   Bitmap myBitmap = BitmapFactory.decodeFile(imgFile.getAbsolutePath());
+					
+	        		   ImageView chosenImage = (ImageView) findViewById(R.id.mypicture);
+					   chosenImage.setImageBitmap(myBitmap);
+	        	   }
         	   }
-        	   
            }
            
            // fetch chosenphoto:
            int chosenPhotoHash = myrecord.chosenPhotoHash;
            if (chosenPhotoHash != 0) { // display chosen photo
         	   PhotoRecord myPhotoRecord = photos.readOne(chosenPhotoHash);
-        	   File imgFile = myPhotoRecord.file;
-        	   if(imgFile.exists()){
-        		   Bitmap myBitmap = BitmapFactory.decodeFile(imgFile.getAbsolutePath());
-				
-        		   ImageView chosenImage = (ImageView) findViewById(R.id.chosenpicture);
-				   chosenImage.setImageBitmap(myBitmap);
+        	   if(myPhotoRecord != null) {
+	        	   File imgFile = myPhotoRecord.file;
+	        	   if(imgFile != null && imgFile.exists()){
+	        		   Bitmap myBitmap = BitmapFactory.decodeFile(imgFile.getAbsolutePath());
+					
+	        		   ImageView chosenImage = (ImageView) findViewById(R.id.chosenpicture);
+					   chosenImage.setImageBitmap(myBitmap);
+	        	   }
         	   }
            }
-           */
+           
         } catch (DB461Exception e) {
         	Log.e(TAG, e.getMessage());
 		} finally {
@@ -371,7 +384,8 @@ public class SNetActivity extends NetLoadableAndroidApp {
     	} catch (DB461Exception e) {
     		Log.e(TAG, e.getMessage());
     	} finally {
-    		if ( db != null ) db.discard();
+    		if ( db != null )
+    			db.discard();
     		if(members == null)
     			members = new ArrayList<String>(1);
     	}

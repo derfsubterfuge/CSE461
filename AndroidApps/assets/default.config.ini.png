@@ -8,7 +8,7 @@
 #------------------------------------------------
 
 debug.enable=1
-debug.level=5
+debug.level=3
 
 #------------------------------------------------
 # basic network config values
@@ -24,19 +24,6 @@ net.services=edu.uw.cs.cse461.Net.RPC.RPCService \
              edu.uw.cs.cse461.Net.DDNS.DDNSService \
              edu.uw.cs.cse461.Net.DDNS.DDNSResolverService \
              edu.uw.cs.cse461.HTTP.HTTPDService
-            
-# List of class names of console applications to load
-#   and name of initial application to launch.
-# (Ignored if running under Android.)
-console.apps=edu.uw.cs.cse461.ConsoleApps.Infrastructure.AppManager \
-        edu.uw.cs.cse461.ConsoleApps.EchoRPC \
-        edu.uw.cs.cse461.ConsoleApps.PingRPC \
-        edu.uw.cs.cse461.ConsoleApps.PingDDNS \
-        edu.uw.cs.cse461.ConsoleApps.nslookup \
-        edu.uw.cs.cse461.ConsoleApps.Version \
-        edu.uw.cs.cse461.ConsoleApps.WhoAmI	\
-        edu.uw.cs.cse461.ConsoleApps.SNet	\
-        edu.uw.cs.cse461.ConsoleApps.DDNSTester
        
         
 # this name must be the one provided by app.loadablename()
