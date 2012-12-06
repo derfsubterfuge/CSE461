@@ -80,6 +80,7 @@ public class RPCService extends NetLoadableService implements RPCServiceInterfac
 	@Override
 	public synchronized void registerHandler(String serviceName, String methodName, RPCCallableMethod method) throws Exception {
 		String key = serviceName + "." + methodName;
+		Log.d(TAG, "attempting to register: " + key);
 		if(mServiceMethodMap.containsKey(key))
 			throw new Exception(key + " is already registered");
 		mServiceMethodMap.put(key, method);

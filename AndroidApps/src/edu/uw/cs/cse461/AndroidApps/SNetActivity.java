@@ -1,14 +1,15 @@
 package edu.uw.cs.cse461.AndroidApps;
 
 import java.io.File;
-import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
+import org.json.JSONObject;
+
 import android.content.Intent;
-import android.content.SharedPreferences;
 import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
@@ -21,21 +22,16 @@ import android.view.View;
 import android.widget.ArrayAdapter;
 import android.widget.ImageView;
 import android.widget.Spinner;
-import android.widget.TextView;
 import edu.uw.cs.cse461.DB461.DB461.DB461Exception;
 import edu.uw.cs.cse461.Net.Base.NetBase;
 import edu.uw.cs.cse461.Net.Base.NetLoadableAndroidApp;
 import edu.uw.cs.cse461.Net.DDNS.DDNSFullName;
+import edu.uw.cs.cse461.Net.RPC.RPCCallableMethod;
+import edu.uw.cs.cse461.Net.RPC.RPCService;
 import edu.uw.cs.cse461.SNet.SNetController;
 import edu.uw.cs.cse461.SNet.SNetDB461;
-import edu.uw.cs.cse461.util.ConfigManager;
 import edu.uw.cs.cse461.util.ContextManager;
-import edu.uw.cs.cse461.util.IPFinder;
-
 import edu.uw.cs.cse461.SNet.SNetDB461.CommunityRecord;
-import edu.uw.cs.cse461.SNet.SNetDB461.Photo;
-import edu.uw.cs.cse461.SNet.SNetDB461.PhotoRecord;
-import edu.uw.cs.cse461.DB461.DB461.DB461Exception;
 import edu.uw.cs.cse461.DB461.DB461.RecordSet;
 
 public class SNetActivity extends NetLoadableAndroidApp {
@@ -46,22 +42,21 @@ public class SNetActivity extends NetLoadableAndroidApp {
     private static final int CAPTURE_IMAGE_ACTIVITY_REQUEST_CODE = 100;
     private static final String SD_CARD_PATH = Environment.getExternalStorageDirectory().getPath();
 	
+    private RPCCallableMethod fetchupdates;
+	private RPCCallableMethod fetchphoto;
+	
 	private SNetController controller;
-	private String myName;
+	private DDNSFullName myName;
 	private File galleryDir;
 	private String dbPath;
-
-	public SNetActivity() {
-		super("SNet", true);
-        ConfigManager config = NetBase.theNetBase().config();
-        myName = config.getProperty("net.hostname");
-		galleryDir = new File(SD_CARD_PATH + "/snetpictures");
-		if (!galleryDir.exists()) {
-			galleryDir.mkdir();
-		}
-		dbPath = SD_CARD_PATH;
-		controller = new SNetController(dbPath);
-
+	private Exception onCreateException = null;
+	
+	public SNetActivity() throws Exception {
+		super("snet", true);
+		Log.d(TAG, "constructor");
+		if(onCreateException != null)
+			throw onCreateException;
+		
 	}
 	
     /** Called when the activity is first created. */
@@ -69,6 +64,35 @@ public class SNetActivity extends NetLoadableAndroidApp {
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         Log.d(TAG, "onCreate");
+        
+        myName = new DDNSFullName(NetBase.theNetBase().hostname());
+		galleryDir = new File(SD_CARD_PATH + "/snetpictures");
+		if (!galleryDir.exists()) {
+			galleryDir.mkdir();
+		}
+		
+		dbPath = SD_CARD_PATH;
+		try {
+			controller = new SNetController(dbPath);
+			//TODO: remove following line
+			//Log.d(TAG, "DELETE DB: " + (new File(controller.DBName()).delete()));
+			
+			// register rpc interface
+			fetchupdates = new RPCCallableMethod(this, "_rpcFetchUpdates");
+			fetchphoto = new RPCCallableMethod(this, "_rpcFetchPhoto");
+			
+			RPCService rpcService = (RPCService)NetBase.theNetBase().getService("rpc");
+			if ( rpcService == null) throw new Exception("The SNet app requires that the RPC resolver service be loaded");
+			rpcService.registerHandler(loadablename(), "fetchUpdates", fetchupdates );
+			rpcService.registerHandler(loadablename(), "fetchPhoto", fetchphoto );
+			
+			// make sure user is in db
+			myName = new DDNSFullName(NetBase.theNetBase().hostname());
+			controller.registerBaseUsers(myName);
+		} catch(Exception e) {
+			Log.d(TAG, e.toString());
+			onCreateException = e;
+		}
         
         // display main screen
         goToMain();
@@ -169,6 +193,7 @@ public class SNetActivity extends NetLoadableAndroidApp {
 			e.printStackTrace();
 			Log.e(TAG, e.getMessage());
 		}
+    	updateSpinner();
     }
     
     // click Fix DB
@@ -177,6 +202,7 @@ public class SNetActivity extends NetLoadableAndroidApp {
     	
     	try {
 			controller.fixDB(galleryDir);
+			updateSpinner();
 		} catch (DB461Exception e) {
 			Log.e(TAG, e.getMessage());
 		}
@@ -214,7 +240,7 @@ public class SNetActivity extends NetLoadableAndroidApp {
 					photoBmp.compress(Bitmap.CompressFormat.JPEG, 100, myPhotoStream);
 					
 					// update the db
-					controller.newMyPhoto(new DDNSFullName(myName), myPhoto.getAbsolutePath(), galleryDir);
+					controller.newMyPhoto(myName, myPhoto.getAbsolutePath(), galleryDir);
 					
 				} catch (IOException e) {
 					e.printStackTrace();
@@ -251,7 +277,7 @@ public class SNetActivity extends NetLoadableAndroidApp {
 	    		    
 	    		    // save to DB
 	    		    try {
-						controller.setChosenPhoto(new DDNSFullName(myName), filePath, galleryDir);
+						controller.setChosenPhoto(myName, filePath, galleryDir);
 					} catch (Exception e) {
 						Log.e(TAG, e.getMessage());
 					}
@@ -274,11 +300,11 @@ public class SNetActivity extends NetLoadableAndroidApp {
         SNetDB461 db = null;
         try {
            db = new SNetDB461(controller.DBName());
-           controller.registerBaseUsers(new DDNSFullName(myName));	// no-op if db already exists, ok to leave in for all cases
+           /*controller.registerBaseUsers(myName);	// no-op if db already exists, ok to leave in for all cases
     
            SNetDB461.CommunityTable community = db.COMMUNITYTABLE;
     	   SNetDB461.PhotoTable photos = db.PHOTOTABLE;
-           CommunityRecord myrecord = community.readOne(myName);
+           CommunityRecord myrecord = community.readOne(myName.toString());
            // fetch myphoto: 
            int myPhotoHash = myrecord.myPhotoHash;
            if (myPhotoHash != 0) {	// display my photo
@@ -306,7 +332,7 @@ public class SNetActivity extends NetLoadableAndroidApp {
 				   chosenImage.setImageBitmap(myBitmap);
         	   }
            }
-           
+           */
         } catch (DB461Exception e) {
         	Log.e(TAG, e.getMessage());
 		} finally {
@@ -320,29 +346,40 @@ public class SNetActivity extends NetLoadableAndroidApp {
     // getting all names from the database and populating the drop-down list
     public void goToContact() {
         setContentView(R.layout.snet_contact);
-        
-        // find spinner to add to, create list to put names in
-        Spinner spinner = (Spinner) findViewById(R.id.memberspinner);
-        List<String> members = new ArrayList<String>();
-        
-        SNetDB461 db = null;
-        try {
-           db = new SNetDB461(controller.DBName());
-           
-           // look up all names in the community table and add to members list
-           RecordSet<CommunityRecord> allMemberInfo = db.COMMUNITYTABLE.readAll();
-           for(CommunityRecord member : allMemberInfo) {
-        	   members.add(member.name.toString());
-           }
-        } catch (DB461Exception e) {
-        	Log.e(TAG, e.getMessage());
-		} finally {
-           if ( db != null ) db.discard();
-        }
+        updateSpinner();
+    }
+    
+    public void updateSpinner() {
+    	Spinner spinner = (Spinner) findViewById(R.id.memberspinner);
+    	String curSelected = (spinner.getSelectedItem() == null) ? "" : spinner.getSelectedItem().toString();
+    	int selectedPosition = 0;
+    	List<String> members = null;
+    	SNetDB461 db = null;
+    	try {
+    		db = new SNetDB461(controller.DBName());
 
-        // attach list to spinner
-        ArrayAdapter adapter = new ArrayAdapter(this, android.R.layout.simple_spinner_item, members);
-        spinner.setAdapter(adapter);
+    		// look up all names in the community table and add to members list
+    		RecordSet<CommunityRecord> allMemberInfo = db.COMMUNITYTABLE.readAll();
+    		members = new ArrayList<String>(allMemberInfo.size());
+    		for(CommunityRecord member : allMemberInfo) {
+    			members.add(member.name.toString());
+      		}
+    		Collections.sort(members);
+    		selectedPosition = Collections.binarySearch(members, curSelected);
+    		if(selectedPosition < 0)
+    			selectedPosition = 0;
+    	} catch (DB461Exception e) {
+    		Log.e(TAG, e.getMessage());
+    	} finally {
+    		if ( db != null ) db.discard();
+    		if(members == null)
+    			members = new ArrayList<String>(1);
+    	}
+
+    	// attach list to spinner
+    	ArrayAdapter<String> adapter = new ArrayAdapter<String>(this, android.R.layout.simple_spinner_item, members);
+    	spinner.setAdapter(adapter);
+    	spinner.setSelection(selectedPosition);
     }
     
     public void updateFriend(boolean setFriend) {
@@ -358,6 +395,22 @@ public class SNetActivity extends NetLoadableAndroidApp {
 		}
     }
     
-   
+   /**************************************
+    * METHODS FOR RPC CALL
+    *************************************/
+    
+    public JSONObject _rpcFetchUpdates(JSONObject args) throws Exception {
+		Log.i(TAG, "started fetch updates");
+		JSONObject resultObj = controller.fetchUpdatesCallee(args);
+		Log.i(TAG, "finished fetch updates");
+		return resultObj;
+	}
+
+	public JSONObject _rpcFetchPhoto(JSONObject args) throws Exception {
+		Log.i(TAG, "started fetch photo");
+		JSONObject resultObj = controller.fetchPhotoCallee(args);
+		Log.i(TAG, "started fetch photo");
+		return resultObj;
+	}
     
 }

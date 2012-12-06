@@ -53,7 +53,7 @@ public class SNetController {
 	/**
 	 * IMPLEMENTED: Returns the full path name of the DB file.
 	 */
-	public String DBName() {
+	synchronized public String DBName() {
 		return mDBName;
 	}
 
@@ -63,7 +63,7 @@ public class SNetController {
 	 * @param user A user name
 	 * @throws DB461Exception Some unanticipated exception occurred.
 	 */
-	public void registerBaseUsers(DDNSFullName user) throws DB461Exception {
+	synchronized public void registerBaseUsers(DDNSFullName user) throws DB461Exception {
 		SNetDB461 db = null;
 		try {
 			db = new SNetDB461(mDBName);
@@ -229,7 +229,7 @@ public class SNetController {
 	 * @param photoType String indicating either "my" or "chosen" as what is to be updated
 	 * @throws DB461Exception  Can't find member in community table, or some unanticipated exception occurs.
 	 */
-	private void setPhoto(DDNSFullNameInterface memberName, String filename, File galleryDir, String photoType) throws DB461Exception {
+	synchronized private void setPhoto(DDNSFullNameInterface memberName, String filename, File galleryDir, String photoType) throws DB461Exception {
 		try {
 			if(!photoType.equals("chosen") && !photoType.equals("my")) {
 				throw new IllegalArgumentException("photo type must be either chosen or my");
@@ -268,7 +268,7 @@ public class SNetController {
 	}
 	
 	//helper method for updating the DB table with photo info
-	private void updatePhotoRecord(DDNSFullNameInterface memberName, File newPhotoFile, int newHash, int gen, String photoType) throws DB461Exception {
+	synchronized private void updatePhotoRecord(DDNSFullNameInterface memberName, File newPhotoFile, int newHash, int gen, String photoType) throws DB461Exception {
 		if(!photoType.equals("chosen") && !photoType.equals("my")) {
 			throw new IllegalArgumentException("photo type must be either chosen or my");
 		}
@@ -332,7 +332,7 @@ public class SNetController {
 	}
 
 	//copies src to the dstDir with the file name newName in the dstDir
-	private static File copyToGallery(File src, String newName, File dstDir) throws FileNotFoundException, IOException {
+	synchronized private static File copyToGallery(File src, String newName, File dstDir) throws FileNotFoundException, IOException {
 		File result = new File(dstDir, newName);
 		if(result.exists() && !result.delete())
 			throw new IOException("Cannot delete already existent file: " + result.getAbsolutePath());
@@ -540,7 +540,7 @@ public class SNetController {
 		}
 	}
 	
-	private JSONObject createFetchUpdatesArgs(String dest) throws DB461Exception, JSONException {
+	synchronized private JSONObject createFetchUpdatesArgs(String dest) throws DB461Exception, JSONException {
 		SNetDB461 db = null;
 		try {
 			db = new SNetDB461(this.DBName());
