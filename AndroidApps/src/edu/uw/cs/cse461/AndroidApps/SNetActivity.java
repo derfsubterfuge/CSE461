@@ -1,14 +1,18 @@
 package edu.uw.cs.cse461.AndroidApps;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
 import org.json.JSONObject;
 
+import android.app.Activity;
 import android.content.Intent;
 import android.database.Cursor;
 import android.graphics.Bitmap;
@@ -22,6 +26,7 @@ import android.view.View;
 import android.widget.ArrayAdapter;
 import android.widget.ImageView;
 import android.widget.Spinner;
+import android.widget.ProgressBar;
 import edu.uw.cs.cse461.DB461.DB461.DB461Exception;
 import edu.uw.cs.cse461.Net.Base.NetBase;
 import edu.uw.cs.cse461.Net.Base.NetLoadableAndroidApp;
@@ -31,6 +36,7 @@ import edu.uw.cs.cse461.Net.RPC.RPCService;
 import edu.uw.cs.cse461.SNet.SNetController;
 import edu.uw.cs.cse461.SNet.SNetDB461;
 import edu.uw.cs.cse461.SNet.SNetDB461.PhotoRecord;
+import edu.uw.cs.cse461.util.BitmapLoader;
 import edu.uw.cs.cse461.util.ContextManager;
 import edu.uw.cs.cse461.SNet.SNetDB461.CommunityRecord;
 import edu.uw.cs.cse461.DB461.DB461.RecordSet;
@@ -51,6 +57,7 @@ public class SNetActivity extends NetLoadableAndroidApp {
 	private File galleryDir;
 	private String dbPath;
 	private Exception onCreateException = null;
+	private File chosenPhoto = null;
 	
 	public SNetActivity() throws Exception {
 		super("snet", true);
@@ -74,7 +81,7 @@ public class SNetActivity extends NetLoadableAndroidApp {
 		dbPath = SD_CARD_PATH;
 		try {
 			controller = new SNetController(dbPath);
-			Log.d(TAG, "Couldn't unlock db... deleting DB: " + (new File(controller.DBName()).delete()));
+			//Log.d(TAG, "Couldn't unlock db... deleting DB: " + (new File(controller.DBName()).delete()));
 			// register rpc interface
 			fetchupdates = new RPCCallableMethod(this, "_rpcFetchUpdates");
 			fetchphoto = new RPCCallableMethod(this, "_rpcFetchPhoto");
@@ -91,12 +98,13 @@ public class SNetActivity extends NetLoadableAndroidApp {
 			Log.d(TAG, e.toString());
 			onCreateException = e;
 		}
-        
+      
         // display main screen
         goToMain();
         
         // save my context so that this app can retrieve it later (?)
         ContextManager.setActivityContext(this);
+        
     }
     
     /**
@@ -194,6 +202,7 @@ public class SNetActivity extends NetLoadableAndroidApp {
     	
     	sendBroadcast(new Intent (Intent.ACTION_MEDIA_MOUNTED, Uri.parse("file://" + Environment.getExternalStorageDirectory())));
     	updateSpinner();
+    	
     }
     
     // click Fix DB
@@ -224,21 +233,21 @@ public class SNetActivity extends NetLoadableAndroidApp {
     
     
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-    	if(data == null)
+    	if(resultCode == Activity.RESULT_CANCELED || data == null)
     		return;
     	Log.d(TAG, "got a result!");
     	switch (requestCode) {
 	    	case CAPTURE_IMAGE_ACTIVITY_REQUEST_CODE:    		
 	    	    // get the picture I just took:
 	    	    Bitmap photoBmp = (Bitmap)data.getExtras().get("data");
-    		    ImageView myImage = (ImageView) findViewById(R.id.mypicture);
-    		    myImage.setImageBitmap(photoBmp);
+    		    
     		    File myPhoto = null;
+    		    FileOutputStream myPhotoStream = null;
 				try {
 					// create file for it
 
 					myPhoto = File.createTempFile("myphoto", ".jpg", galleryDir);
-					FileOutputStream myPhotoStream = new FileOutputStream(myPhoto);
+					myPhotoStream = new FileOutputStream(myPhoto);
 					
 					// write the data to that file
 					photoBmp.compress(Bitmap.CompressFormat.JPEG, 100, myPhotoStream);
@@ -253,13 +262,15 @@ public class SNetActivity extends NetLoadableAndroidApp {
 				} catch (DB461Exception e) {
 					Log.e(TAG, e.getMessage());
 				} finally {
+					if(myPhotoStream != null)
+						try {
+							myPhotoStream.close();
+						} catch (IOException e) {
+						}
 					if(myPhoto != null)
 						myPhoto.delete();
 				}
-       		    
-	    		// Try to update gallery viewer
-	    	    sendBroadcast(new Intent (Intent.ACTION_MEDIA_MOUNTED, Uri.parse("file://" + Environment.getExternalStorageDirectory())));
-	    	    
+       		    	    	    
 	    		break;
 	    	case CHOOSE_PICTURE_ACTIVITY_REQUEST_CODE:
 	    		// retrieve the picture selected: 
@@ -277,12 +288,8 @@ public class SNetActivity extends NetLoadableAndroidApp {
 	    		Log.d(TAG, "File path of chosen picture: " + filePath);
 	    		
 	    		File imgFile = new  File(filePath);
-	    		if(imgFile.exists()){
-	    		    Bitmap myBitmap = BitmapFactory.decodeFile(imgFile.getAbsolutePath());
-
-	    		    ImageView chosenImage = (ImageView) findViewById(R.id.chosenpicture);
-	    		    chosenImage.setImageBitmap(myBitmap);
-	    		    
+	    		if(imgFile.isFile()){	    		
+    
 	    		    // save to DB
 	    		    try {
 						controller.setChosenPhoto(myName, filePath, galleryDir);
@@ -294,6 +301,9 @@ public class SNetActivity extends NetLoadableAndroidApp {
 	    	default:
 	    		break;
     	}
+    	
+    	sendBroadcast(new Intent (Intent.ACTION_MEDIA_MOUNTED, Uri.parse("file://" + Environment.getExternalStorageDirectory())));
+    	goToMain();
     }
     
     
@@ -304,7 +314,7 @@ public class SNetActivity extends NetLoadableAndroidApp {
     // handles redirecting to the home screen of the app as well as 
     // getting the myphoto and chosen photo from the db and displaying them
     public void goToMain() {
-        setContentView(R.layout.snet_main);
+    	setContentView(R.layout.snet_main);
         SNetDB461 db = null;
         try {
            db = new SNetDB461(controller.DBName());
@@ -316,29 +326,47 @@ public class SNetActivity extends NetLoadableAndroidApp {
            // fetch myphoto: 
           
            int myPhotoHash = myrecord.myPhotoHash;
-           Log.d(TAG, "my photo hash: " + myPhotoHash);
+           int chosenPhotoHash = myrecord.chosenPhotoHash;
+           
+           
+           Log.d(TAG, myrecord.toString());
            if (myPhotoHash != 0) {	// display my photo
         	   // look up file path in photo table
         	   PhotoRecord myPhotoRecord = photos.readOne(myPhotoHash);
+        	   Log.d(TAG, "MY PHOTO REC: " + myPhotoRecord.toString());
         	   if(myPhotoRecord != null) {
 	        	   File imgFile = myPhotoRecord.file;
+	        	   
 	        	   if(imgFile != null && imgFile.isFile()){
-	        		   Bitmap myBitmap = BitmapFactory.decodeFile(imgFile.getAbsolutePath());
-					
-	        		   ImageView chosenImage = (ImageView) findViewById(R.id.mypicture);
-					   chosenImage.setImageBitmap(myBitmap);
+	        		   Log.d(TAG, "photoname: " + myPhotoRecord.file.getAbsolutePath());
+	        		   Bitmap myBitmap = null;
+					try {
+						myBitmap = BitmapLoader.loadBitmap(imgFile.getCanonicalPath(), 100, 100);
+					} catch (IOException e) {
+						// TODO Auto-generated catch block
+						e.printStackTrace();
+					}
+	        		   ImageView myImg = (ImageView) findViewById(R.id.mypicture);
+	        		   myImg.setImageBitmap(myBitmap);
 	        	   }
         	   }
            }
            
            // fetch chosenphoto:
-           int chosenPhotoHash = myrecord.chosenPhotoHash;
            if (chosenPhotoHash != 0) { // display chosen photo
         	   PhotoRecord myPhotoRecord = photos.readOne(chosenPhotoHash);
+        	   Log.d(TAG, "CHOSEN PHOTO REC: " + myPhotoRecord.toString());
         	   if(myPhotoRecord != null) {
-	        	   File imgFile = myPhotoRecord.file;
+        		   File imgFile = myPhotoRecord.file;
+        		 
 	        	   if(imgFile != null && imgFile.exists()){
-	        		   Bitmap myBitmap = BitmapFactory.decodeFile(imgFile.getAbsolutePath());
+	        		   Bitmap myBitmap = null;
+					try {
+							myBitmap = BitmapLoader.loadBitmap(imgFile.getCanonicalPath(), 100, 100);
+					} catch (IOException e) {
+						// TODO Auto-generated catch block
+						e.printStackTrace();
+					}
 					
 	        		   ImageView chosenImage = (ImageView) findViewById(R.id.chosenpicture);
 					   chosenImage.setImageBitmap(myBitmap);
@@ -353,7 +381,6 @@ public class SNetActivity extends NetLoadableAndroidApp {
         }
     	
     }
-    
     
     // handles redirecting to the contact/friends page as well as 
     // getting all names from the database and populating the drop-down list

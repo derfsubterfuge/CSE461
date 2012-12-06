@@ -113,4 +113,4 @@ dataxfertcpmessagehandler.ntrials=5
 #------------------------------------------------
 
 # the maximum number of bytes fetchPhoto() is willing to return in a single call 
-snet.fetchphoto_maxlength=2097152
+snet.fetchphoto_maxlength=1048576

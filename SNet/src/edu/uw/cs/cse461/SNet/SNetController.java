@@ -247,7 +247,7 @@ public class SNetController {
 			photo = null; //that way a null exception will occur if i try to use any of its methods illegally
 			
 			//if file isn't in the gallery directory, or doesn't have its hash as its name, make a copy of it
-			if(!photoFile.getParentFile().equals(galleryDir) || !photoFile.getName().equals(newPhotoHash)) {
+			if(!photoFile.getParentFile().equals(galleryDir) || !photoFile.getName().equals(newPhotoHash+".jpg")) {
 				photoFile = copyToGallery(photoFile, newPhotoHash+".jpg", galleryDir);
 			}
 			
@@ -285,42 +285,45 @@ public class SNetController {
 				throw new DB461Exception("Member is not in the database: " + memberName.toString());
 			}
 
-			//OLD PHOTO HANDLING: Decrement reference count on any existing chosen photo and
-			//delete underyling file if appropriate.
 			int oldPhotoHash;
 			if(photoType.equals("chosen"))
 				oldPhotoHash = memRec.chosenPhotoHash;
 			else //my photo
 				oldPhotoHash = memRec.myPhotoHash;
-
-			if(oldPhotoHash != 0) { //if old photo exists
-				PhotoRecord oldPhotoRec = db.PHOTOTABLE.readOne(oldPhotoHash);
-				if(oldPhotoRec == null) {
-					throw new DB461Exception("Old photo is not in the database. Hash: " + oldPhotoHash);
+			
+			if(newHash != oldPhotoHash) {
+				
+				//OLD PHOTO HANDLING: Decrement reference count on any existing chosen photo and
+				//delete underyling file if appropriate.
+				if(oldPhotoHash != 0) { //if old photo exists
+					PhotoRecord oldPhotoRec = db.PHOTOTABLE.readOne(oldPhotoHash);
+					if(oldPhotoRec == null) {
+						throw new DB461Exception("Old photo is not in the database. Hash: " + oldPhotoHash);
+					}
+	
+					oldPhotoRec.refCount--;
+					if(oldPhotoRec.refCount <= 0) {
+						if(oldPhotoRec.file != null && oldPhotoRec.file.isFile())
+							oldPhotoRec.file.delete();
+						db.PHOTOTABLE.delete(oldPhotoHash);
+					} else {
+						db.PHOTOTABLE.write(oldPhotoRec);
+					}
 				}
-
-				oldPhotoRec.refCount--;
-				if(oldPhotoRec.refCount <= 0) {
-					if(oldPhotoRec.file != null && oldPhotoRec.file.isFile())
-						oldPhotoRec.file.delete();
-					db.PHOTOTABLE.delete(oldPhotoHash);
-				} else {
-					db.PHOTOTABLE.write(oldPhotoRec);
+				
+				//NEW PHOTO HANDLING: if record, doesn't exit, create one; otherwise increment refcount
+				if(newHash != 0) {
+					PhotoRecord newPhotoRec = db.PHOTOTABLE.readOne(newHash);
+					if(newPhotoRec == null) {
+						newPhotoRec = db.createPhotoRecord();
+						newPhotoRec.file = newPhotoFile;
+						newPhotoRec.hash = newHash;
+						newPhotoRec.refCount = 1;
+					} else {
+						newPhotoRec.refCount++;
+					}
+					db.PHOTOTABLE.write(newPhotoRec);
 				}
-			}
-
-			//NEW PHOTO HANDLING: if record, doesn't exit, create one; otherwise increment refcount
-			if(newHash != 0) {
-				PhotoRecord newPhotoRec = db.PHOTOTABLE.readOne(newHash);
-				if(newPhotoRec == null) {
-					newPhotoRec = db.createPhotoRecord();
-					newPhotoRec.file = newPhotoFile;
-					newPhotoRec.hash = newHash;
-					newPhotoRec.refCount = 1;
-				} else {
-					newPhotoRec.refCount++;
-				}
-				db.PHOTOTABLE.write(newPhotoRec);
 			}
 			
 			if(photoType.equals("chosen"))
@@ -338,8 +341,8 @@ public class SNetController {
 	//copies src to the dstDir with the file name newName in the dstDir
 	synchronized private static File copyToGallery(File src, String newName, File dstDir) throws FileNotFoundException, IOException {
 		File result = new File(dstDir, newName);
-		if(result.exists() && !result.delete())
-			throw new IOException("Cannot delete already existent file: " + result.getAbsolutePath());
+		if(result.isFile())
+			return result;
 		result.createNewFile();
 		
 		InputStream in = null;
@@ -505,7 +508,7 @@ public class SNetController {
 							}
 							attempts = 0;
 						} catch(JSONException e) {
-							//e.printStackTrace();
+							e.printStackTrace();
 							if(++attempts > MAX_PHOTO_XFER_RETRY)
 								throw new DB461Exception("could not complete photo transfer");
 							try {
@@ -526,7 +529,7 @@ public class SNetController {
 					}
 					db.PHOTOTABLE.write(photoRec);
 				} catch(Exception e) {
-					//e.printStackTrace();
+					e.printStackTrace();
 					if(fstream != null) {
 						try {
 							fstream.close();
@@ -548,7 +551,7 @@ public class SNetController {
 				}
 			}
 		} catch(Exception e) {
-			//e.printStackTrace();
+			e.printStackTrace();
 			throw new DB461Exception(e.getMessage());
 		}
 	}
@@ -606,13 +609,13 @@ public class SNetController {
 			fetchUpdatesArgs.put("destname", dest);
 			
 			return fetchUpdatesArgs;
-		} /*catch(DB461Exception e) {
+		} catch(DB461Exception e) {
 			e.printStackTrace();
 			throw e;
 		} catch(JSONException e) {
 			e.printStackTrace();
 			throw e;
-		}*/ finally {
+		} finally {
 			if(db != null)
 				db.discard();
 		}
@@ -687,7 +690,7 @@ public class SNetController {
 	 * @throws Exception
 	 */
 	synchronized public JSONObject fetchPhotoCallee(JSONObject args) throws Exception { 
-		Log.i(TAG, "started fetch updates");
+		Log.d(TAG, "started fetch updates; args: " + args.toString());
 		SNetDB461 db = null;
 		BufferedInputStream fstream = null;
 		try {
